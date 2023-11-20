@@ -825,13 +825,13 @@ int main(int argc, char *argv[]) {
 
 	// Set up files to write population data in
 	char ra_population_filename[100];
-	sprintf(ra_population_filename, "../data/ra_population_sims_%d.txt", seed);
+	sprintf(ra_population_filename, "data/ra_population_sims_%d.txt", seed);
 	FILE *fp_ra_population;
 	fp_ra_population = fopen(ra_population_filename, "w");
 	fprintf(fp_ra_population, "sim,cell,t,wildtype_population,ra_population\n");
 	fclose(fp_ra_population);
 	char ssd_population_filename[100];
-	sprintf(ssd_population_filename, "../data/ssd_population_sims_%d.txt", seed);
+	sprintf(ssd_population_filename, "data/ssd_population_sims_%d.txt", seed);
 	FILE *fp_ssd_population;
 	fp_ssd_population = fopen(ssd_population_filename, "w");
 	fprintf(fp_ssd_population, "sim,cell,t,wildtype_population,ssd_population\n");
@@ -839,7 +839,7 @@ int main(int argc, char *argv[]) {
 
 	// Set up files to write site frequency spectrum data in
 	char ra_sfs_filename[100];
-	sprintf(ra_sfs_filename, "../data/ra_site_frequency_spectrum_sims_%d.txt", seed);
+	sprintf(ra_sfs_filename, "data/ra_site_frequency_spectrum_sims_%d.txt", seed);
 	FILE *fp_ra_sfs;
 	fp_ra_sfs = fopen(ra_sfs_filename, "w");
 	fprintf(fp_ra_sfs, "sim,cell,t");
@@ -852,7 +852,7 @@ int main(int argc, char *argv[]) {
 	fprintf(fp_ra_sfs, "\n");
 	fclose(fp_ra_sfs);
 	char ssd_sfs_filename[100];
-	sprintf(ssd_sfs_filename, "../data/ssd_site_frequency_spectrum_sims_%d.txt", seed);
+	sprintf(ssd_sfs_filename, "data/ssd_site_frequency_spectrum_sims_%d.txt", seed);
 	FILE *fp_ssd_sfs;
 	fp_ssd_sfs = fopen(ssd_sfs_filename, "w");
 	fprintf(fp_ssd_sfs, "sim,cell,t");
@@ -990,10 +990,6 @@ int main(int argc, char *argv[]) {
 
 			while ((max_ra_or_ssd_heteroplasmy<target_ra_or_ssd_heteroplasmy)) {
 				printf("n_event2 = %d\n", n_event2);
-				// print_mutant_counts(mutant_counts);
-				// printf("w = (%d %d) m = (%d %d)\n", wildtype_populations[0], wildtype_populations[1], ra_or_ssd_populations[0], ra_or_ssd_populations[1]);
-				// printf("cell 0 propensity = (%.2f %.2f %.2f %.2f %.2f %.2f)\n", propensity[0][0], propensity[0][1], propensity[0][2], propensity[0][3], propensity[0][4], propensity[0][5]);
-				// printf("cell 1 propensity = (%.2f %.2f %.2f %.2f %.2f %.2f)\n", propensity[1][0], propensity[1][1], propensity[1][2], propensity[1][3], propensity[1][4], propensity[1][5]);
 				// Realise event and time of occurence according to propensity
 				gillespie_event(rng, ssd_sim, propensity, propensity_sums, wildtype_state, ra_or_ssd_state, mutant_counts, wildtype_populations, ra_or_ssd_populations, site_std_mutation_rate, degradation_rate, diffusion_rate, nucleus_control_factor, density, target_population, replicative_advantage);
 				
@@ -1032,14 +1028,14 @@ int main(int argc, char *argv[]) {
 						}
 					}
 					n_event2 = 0;
-					printf("w = (%d %d)\n", wildtype_populations[0], wildtype_populations[1]);
-					printf("m = (%d %d)\n", ra_or_ssd_populations[0], ra_or_ssd_populations[1]);
-					for (int k=0; k<CELLS; ++k) {
-						printf("Cell %d:\nwildtype_state=\n", k);
-						print_state(wildtype_state[k], wildtype_populations[k]);
-						printf("ra_state=\n");
-						print_state(ra_or_ssd_state[k], ra_or_ssd_populations[k]);
-					}
+					// printf("w = (%d %d)\n", wildtype_populations[0], wildtype_populations[1]);
+					// printf("m = (%d %d)\n", ra_or_ssd_populations[0], ra_or_ssd_populations[1]);
+					// for (int k=0; k<CELLS; ++k) {
+					// 	printf("Cell %d:\nwildtype_state=\n", k);
+					// 	print_state(wildtype_state[k], wildtype_populations[k]);
+					// 	printf("ra_state=\n");
+					// 	print_state(ra_or_ssd_state[k], ra_or_ssd_populations[k]);
+					// }
 				}
 			}
 			printf("Target RA/SSD heteroplasmy reached\n");
