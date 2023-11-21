@@ -587,12 +587,17 @@ void introduce_ra_or_ssd(const gsl_rng* rng, int*** wildtype_state, int*** dest_
 	dest_populations, 1d array of population size of each cell,, ie array of zeroes
 	cell_idx, index of cell to which RA or SSD mutation is introduced */
 
-	// Allocate one row for state at given cell
-	int cell_wildtype_population = wildtype_populations[cell_idx];
-	dest_state[cell_idx] = malloc(sizeof(int*));
+	// Initialise RA/SSD state and populations of zero individuals
+	for (int k=0; k<CELLS; ++k) {
+		dest_state[k] = malloc(0);
+		dest_populations[k] = 0;
+	}
 
-	// Introduce RA or SSD mutation to wildtype individual
+	// Allocate one row in dest_state[cell_idx] for the RA/SSD individual
+	dest_state[cell_idx] = realloc(dest_state[cell_idx], sizeof(int*));
+
 	// Copy row to dest_state
+	int cell_wildtype_population = wildtype_populations[cell_idx];
 	int row_idx = floor(RND * cell_wildtype_population);
 	int n_mutations_to_copy = wildtype_state[cell_idx][row_idx][0];
 	dest_state[cell_idx][0] = malloc((n_mutations_to_copy+1) * sizeof(int));
@@ -867,33 +872,6 @@ int main(int argc, char *argv[]) {
 
 	// Generate replication rate and mutation rate for this run
 	site_std_mutation_rate = pow(10, - log_site_std_mutation_rate);
-	
-	// Declare states to store standard mutational information of wildtype, RA, and SSD individuals
-	/* wildtype_state contains mutational information about wildtype individuals
-	wildtype_state[k][i][0] is the number of standard mutations which individual i possesses in cell k
-	wildtype_state[k][i][1:] are the identities of the standard mutations which individual i possesses in cell k */
-	int** wildtype_state[CELLS];
-	/* wildtype_populations[k] is the number of wildtype individuals in cell k */
-	int wildtype_populations[CELLS];
-	/* ra_or_ssd_state contains mutational information about RA or SSD individuals
-	ra_or_ssd_state[k][i][0] is the number of standard mutations which individual i possesses in cell k
-	ra_or_ssd_state[k][i][1:] are the identities of the standard mutations which individual i possesses in cell k */
-	int** ra_or_ssd_state[CELLS];
-	/* ra_or_ssd_populations[k] is the population size of RA/SSD individuals in cell k */
-	int ra_or_ssd_populations[CELLS];
-
-	/* mutant_counts[0][0] is the latest mutation identity across the whole system
-	mutant_counts[1:][0] = 0 are dummy entries
-	mutant_counts[k][i] is the number of individuals in cell k with mutation identity i
-	mutant_counts has number of columns mutant_counts[0][0] + 1 */
-	int* mutant_counts[CELLS];
-
-	/* wildtype_propensity[k][0] is the propensity of degradation of a wildtype individual in cell k
-	wildtype_propensity[k][1] is the propensity of replication of a wildtype individual in cell k
-	wildtype_propensity[k][2] is the propensity of diffusion of a  wildtype in cell k */
-	double* wildtype_propensity[CELLS];
-	/* wildtype_propensity_sums[k] is the sum of the wildtype propensity vector of cell k */
-	double wildtype_propensity_sums[CELLS];
 
 	// Benchmark each batch of simulations
 	clock_t tick, tock;
@@ -901,6 +879,27 @@ int main(int argc, char *argv[]) {
 
 	for(int sim = 0; sim < N_SIMS; ++sim) {
 		if (sim % BATCH_SIZE == 0){tick = clock();}
+	
+		// Declare variables to store standard mutational information of wildtype individuals
+		/* wildtype_state contains mutational information about wildtype individuals
+		wildtype_state[k][i][0] is the number of standard mutations which individual i possesses in cell k
+		wildtype_state[k][i][1:] are the identities of the standard mutations which individual i possesses in cell k */
+		int*** wildtype_state = malloc(CELLS * sizeof(int**));
+		/* wildtype_populations[k] is the number of wildtype individuals in cell k */
+		int* wildtype_populations = malloc(CELLS * sizeof(int));
+
+		/* mutant_counts[0][0] is the latest mutation identity across the whole system
+		mutant_counts[1:][0] = 0 are dummy entries
+		mutant_counts[k][i] is the number of individuals in cell k with mutation identity i
+		mutant_counts has number of columns mutant_counts[0][0] + 1 */
+		int** mutant_counts = malloc(CELLS * sizeof(int*));
+
+		/* wildtype_propensity[k][0] is the propensity of degradation of a wildtype individual in cell k
+		wildtype_propensity[k][1] is the propensity of replication of a wildtype individual in cell k
+		wildtype_propensity[k][2] is the propensity of diffusion of a  wildtype in cell k */
+		double** wildtype_propensity = malloc(CELLS * sizeof(double*));
+		/* wildtype_propensity_sums[k] is the sum of the wildtype propensity vector of cell k */
+		double* wildtype_propensity_sums = malloc(CELLS * sizeof(double));
 
 		for (int k=0; k<CELLS; ++k) {
 			// Initialise wildtype population steady state
@@ -916,7 +915,7 @@ int main(int argc, char *argv[]) {
 			wildtype_propensity_update(wildtype_propensity, wildtype_propensity_sums, k, wildtype_populations, degradation_rate, diffusion_rate, nucleus_control_factor, target_population);
 		}
 
-		double max_std_heteroplasmies[CELLS];
+		double* max_std_heteroplasmies = malloc(CELLS * sizeof(double));
 		int max_std_mutant_count;
 		int cell_with_highest_heteroplasmy;
 		int n_events = 0;
@@ -936,24 +935,27 @@ int main(int argc, char *argv[]) {
 
 		// Free wildtype propensity memory
 		for (int k=0; k<CELLS; ++k) {free(wildtype_propensity[k]);}
+		free(wildtype_propensity);
+		free(wildtype_propensity_sums);
+
+		/* ra_or_ssd_state contains mutational information about RA/SSD individuals
+		ra_or_ssd_state[k][i][0] is the number of standard mutations which individual i possesses in cell k
+		ra_or_ssd_state[k][i][1:] are the identities of the standard mutations which individual i possesses in cell k */
+		int*** ra_or_ssd_state = malloc(CELLS * sizeof(int**));
+		/* ra_or_ssd_populations[k] is the population size of RA/SSD individuals in cell k */
+		int* ra_or_ssd_populations = malloc(CELLS * sizeof(int));
 
 		// Simulate systems with RA and SSD separately
 		for (int ssd_sim=0; ssd_sim<=1; ++ssd_sim) {
 
-			// Initialise RA/SSD state
-			for (int k=0; k<CELLS; ++k) {
-				ra_or_ssd_state[k] = malloc(0);
-				ra_or_ssd_populations[k] = 0;
-			}
-
 			// Store states, populations, and mutant counts to initialise for when RA/SSD population dies out
-			int** initial_wildtype_state[CELLS];
+			int*** initial_wildtype_state = malloc(CELLS * sizeof(int**));
 			copy_state(wildtype_state, initial_wildtype_state, wildtype_populations);
-			int initial_wildtype_populations[CELLS];
+			int* initial_wildtype_populations = malloc(CELLS * sizeof(int));
 			copy_population(wildtype_populations, initial_wildtype_populations);
-			int* initial_mutant_counts[CELLS];
+			int** initial_mutant_counts = malloc(CELLS * sizeof(int*));
 			copy_mutant_counts(mutant_counts, initial_mutant_counts);
-			
+
 			// Introduce 1 RA/SSD individual to system
 			introduce_ra_or_ssd(rng, wildtype_state, ra_or_ssd_state, wildtype_populations, ra_or_ssd_populations, cell_with_highest_heteroplasmy);			
 			compact_relabel_mutations(mutant_counts, wildtype_state, ra_or_ssd_state, wildtype_populations, ra_or_ssd_populations);
@@ -965,9 +967,9 @@ int main(int argc, char *argv[]) {
 			propensity[k][3] is the propensity of degradation of an RA/SSD individual in cell k
 			propensity[k][4] is the propensity of replication of an RA/SSD individual in cell k
 			propensity[k][5] is the propensity of diffusion of an RA/SSD individual in cell k*/
-			double* propensity[CELLS];
+			double** propensity = malloc(CELLS * sizeof(double*));
 			/* propensity_sums[k] is the sum of the propensity vector of cell k */
-			double propensity_sums[CELLS];
+			double* propensity_sums = malloc(CELLS * sizeof(double));
 			if (ssd_sim) {
 				for (int k=0; k<CELLS; ++k) {
 					propensity[k] = malloc(6 * sizeof(double));
@@ -988,7 +990,7 @@ int main(int argc, char *argv[]) {
 			if (ssd_sim) {printf("Trying to reach target SSD heteroplasmy...\n");}
 			else {printf("Trying to reach target RA heteroplasmy...\n");}
 
-			while ((max_ra_or_ssd_heteroplasmy<target_ra_or_ssd_heteroplasmy)) {
+			while (max_ra_or_ssd_heteroplasmy<target_ra_or_ssd_heteroplasmy) {
 				printf("n_event2 = %d\n", n_event2);
 				// Realise event and time of occurence according to propensity
 				gillespie_event(rng, ssd_sim, propensity, propensity_sums, wildtype_state, ra_or_ssd_state, mutant_counts, wildtype_populations, ra_or_ssd_populations, site_std_mutation_rate, degradation_rate, diffusion_rate, nucleus_control_factor, density, target_population, replicative_advantage);
@@ -1014,7 +1016,7 @@ int main(int argc, char *argv[]) {
 
 					// Re-introduce RA/SSD individual
 					introduce_ra_or_ssd(rng, wildtype_state, ra_or_ssd_state, wildtype_populations, ra_or_ssd_populations, cell_with_highest_heteroplasmy);			
-					// compact_relabel_mutations(mutant_counts, wildtype_state, ra_or_ssd_state, wildtype_populations, ra_or_ssd_populations);
+					compact_relabel_mutations(mutant_counts, wildtype_state, ra_or_ssd_state, wildtype_populations, ra_or_ssd_populations);
 					max_ra_or_ssd_heteroplasmy = get_max_ra_or_ssd_heteroplasmy(wildtype_populations, ra_or_ssd_populations);
 
 					// Re-setup propensity
@@ -1047,6 +1049,8 @@ int main(int argc, char *argv[]) {
 				free(initial_wildtype_state[k]);
 				free(initial_mutant_counts[k]);
 			}
+			free(initial_mutant_counts);
+			free(initial_wildtype_state);
 			printf("Initial states memory freed\n");
 
 			double propensity_sum_across_cells;
