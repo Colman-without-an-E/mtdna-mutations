@@ -10,7 +10,7 @@
 
 #define RND gsl_rng_uniform_pos(rng) // generate number from Unif(0,1)
 #define CELLS 2
-#define N_SIMS 2
+#define N_SIMS 1
 #define BATCH_SIZE 1
 #define SIM_LENGTH 100.00
 #define RECORDING_SPACE 10.0
@@ -427,16 +427,16 @@ void gillespie_event(const gsl_rng* rng, int ssd_sim, double** propensity, doubl
 			index_diffuse = floor(RND * wildtype_populations[cell_idx]);
 			state_update_diffuse(wildtype_state, cell_idx, cell_idx_diffuse_to, index_diffuse, wildtype_populations, mutant_counts);
 			break;
-		case 3: // RA degradation
+		case 3: // RA/SSD degradation
 			index_die = floor(RND * ra_or_ssd_populations[cell_idx]);
 			state_update_degrade(ra_or_ssd_state, cell_idx, index_die, ra_or_ssd_populations, mutant_counts);
 			break;
-		case 4: // RA replication
+		case 4: // RA/SSD replication
 			index_born = floor(RND * ra_or_ssd_populations[cell_idx]);
 			n_new_std_mutations = gsl_ran_binomial(rng, site_std_mutation_rate, LEN_GENOME);
 			state_update_replicate(ra_or_ssd_state, cell_idx, index_born, ra_or_ssd_populations, mutant_counts, n_new_std_mutations);
 			break;
-		case 5: // RA diffusion
+		case 5: // RA/SSD diffusion
 			// Choose cell to diffuse to
 			cell_idx_diffuse_to = choose_neighbouring_cell(rng, cell_idx);
 			index_diffuse = floor(RND * ra_or_ssd_populations[cell_idx]);
@@ -918,7 +918,7 @@ int main(int argc, char *argv[]) {
 		double* max_std_heteroplasmies = malloc(CELLS * sizeof(double));
 		int max_std_mutant_count;
 		int cell_with_highest_heteroplasmy;
-		int n_events = 0;
+		int n_events1 = 0;
 
 		// Gillespie algorithm until a cell reaches homoplasmy
 		printf("Trying to reach standard mutation homoplasmy...\n");
@@ -929,7 +929,7 @@ int main(int argc, char *argv[]) {
 			get_max_std_heteroplasmies(max_std_heteroplasmies, mutant_counts, wildtype_populations); 
 
 			cell_with_highest_heteroplasmy = argmax(max_std_heteroplasmies, CELLS);
-			n_events++;
+			n_events1++;
 		} while (max_std_heteroplasmies[cell_with_highest_heteroplasmy] < 1);
 		printf("Standard mutation homoplasmy reached\n");
 
@@ -991,7 +991,8 @@ int main(int argc, char *argv[]) {
 			else {printf("Trying to reach target RA heteroplasmy...\n");}
 
 			while (max_ra_or_ssd_heteroplasmy<target_ra_or_ssd_heteroplasmy) {
-				printf("n_event2 = %d\n", n_event2);
+				// printf("n_event2 = %d\n", n_event2);
+				// printf("RA heteroplasmy = %.2f\n", max_ra_or_ssd_heteroplasmy);
 				// Realise event and time of occurence according to propensity
 				gillespie_event(rng, ssd_sim, propensity, propensity_sums, wildtype_state, ra_or_ssd_state, mutant_counts, wildtype_populations, ra_or_ssd_populations, site_std_mutation_rate, degradation_rate, diffusion_rate, nucleus_control_factor, density, target_population, replicative_advantage);
 				
@@ -1030,19 +1031,10 @@ int main(int argc, char *argv[]) {
 						}
 					}
 					n_event2 = 0;
-					// printf("w = (%d %d)\n", wildtype_populations[0], wildtype_populations[1]);
-					// printf("m = (%d %d)\n", ra_or_ssd_populations[0], ra_or_ssd_populations[1]);
-					// for (int k=0; k<CELLS; ++k) {
-					// 	printf("Cell %d:\nwildtype_state=\n", k);
-					// 	print_state(wildtype_state[k], wildtype_populations[k]);
-					// 	printf("ra_state=\n");
-					// 	print_state(ra_or_ssd_state[k], ra_or_ssd_populations[k]);
-					// }
 				}
 			}
 			printf("Target RA/SSD heteroplasmy reached\n");
 			compact_relabel_mutations(mutant_counts, wildtype_state, ra_or_ssd_state, wildtype_populations, ra_or_ssd_populations);
-
 			// Free initial states memory
 			for (int k=0; k<CELLS; ++k) {
 				for (int i=0; i<initial_wildtype_populations[k]; ++i) {free(initial_wildtype_state[k][i]);}
@@ -1059,7 +1051,7 @@ int main(int argc, char *argv[]) {
 			int n_event3 = 0;
 
 			// Record data at time 0
-			if (current_time>(recording_time - 1E-12)){
+			if (current_time>(recording_time - 1E-12)) {
 				compact_relabel_mutations(mutant_counts, wildtype_state, ra_or_ssd_state, wildtype_populations, ra_or_ssd_populations);
 				if (ssd_sim) {
 					fp_ssd_population = fopen(ssd_population_filename, "a");
@@ -1080,6 +1072,20 @@ int main(int argc, char *argv[]) {
 			// Simulate
 			printf("Simulating...\n");
 			while (current_time<SIM_LENGTH && n_event3<10000) {
+				printf("n_event3 = %d\n", n_event3);
+				// for (int k=0; k<CELLS; ++k) {
+					// printf("mutant_counts = \n");
+					// print_mutant_counts(mutant_counts);
+					// printf("w = (%d %d) m = (%d %d)", wildtype_populations[0], wildtype_populations[1], ra_or_ssd_populations[0], ra_or_ssd_populations[1]);
+					// printf("cell %d:\n");
+					// printf("propensity = (");
+					// for (int j=0; j<6; ++j) {printf("%.2f ", propensity[k][j]);}
+					// printf(")\n");
+					// printf("RA state = \n", k);
+					// print_state(ra_or_ssd_state[k], ra_or_ssd_populations[k]);
+					// printf("wildtype state = \n");
+					// print_state(wildtype_state[k], wildtype_populations[k]);
+				// }
 				propensity_sum_across_cells = 0;
 				for (int k=0; k<CELLS; ++k) {propensity_sum_across_cells += propensity_sums[k];}
 				current_time += -log(RND) / propensity_sum_across_cells;
@@ -1127,6 +1133,8 @@ int main(int argc, char *argv[]) {
 					recording_time += RECORDING_SPACE;
 				}
 			}
+			printf("Simulation complete, now freeing memory...\n");
+
 			// Free memory
 			for (int k=0; k<CELLS; ++k){
 				free(propensity[k]);
