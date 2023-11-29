@@ -618,6 +618,56 @@ void introduce_ra_or_ssd(const gsl_rng* rng, int*** wildtype_state, int*** dest_
     return;
 }
 
+void compact_relabel_wildtype_mutations(int** mutant_counts, int*** wildtype_state, int* wildtype_populations) {
+    /* Relabels mutation identities of mutant_counts and wildtype_state
+	
+	Inputs
+	------
+	mutant_counts, 2d array of mutant counts of each cell
+	wildtype_state, 3d array state of the wildtype individuals of each cell
+	wildtype_populations, 1d array of wildtype population size in each cell */
+	
+	int old_mutation_counter = mutant_counts[0][0];
+	// Create mapping from old mutation id to new mutation id
+    int new_id = 0;
+    int* id_map = calloc(old_mutation_counter + 1, sizeof(int)); // id_map[old mutation id] = new mutation id
+    for (int i=1; i<=old_mutation_counter; ++i) {
+        for (int k=0; k<CELLS; ++k) {
+            if (mutant_counts[k][i]) {
+                id_map[i] = ++new_id;
+                break;
+            }
+        }
+    }
+
+    // Update wildtype state using the mapping
+    int n_mutations_to_copy;
+    for (int k=0; k<CELLS; ++k) {
+        for (int i=0; i<wildtype_populations[k]; ++i) {
+            n_mutations_to_copy = wildtype_state[k][i][0];
+            for (int j=1; j<=n_mutations_to_copy; ++j) {
+                wildtype_state[k][i][j] = id_map[wildtype_state[k][i][j]];
+            }
+        }
+    }
+
+    // Update mutant_counts according to new mutation identity
+	int new_id_count = 0;
+	for (int old_id=1; old_id<=old_mutation_counter; ++old_id) {
+        if (id_map[old_id]) {
+            for (int k=0; k<CELLS; ++k) {
+                mutant_counts[k][id_map[old_id]] = mutant_counts[k][old_id]; // since id_map[old_id] <= old_id
+            }
+        }
+	}
+    mutant_counts[0][0] = new_id;
+    for (int k=0; k<CELLS; ++k) {mutant_counts[k] = realloc(mutant_counts[k], (new_id+1) * sizeof(int));}
+
+    // Free allocated memory
+    free(id_map);
+    return;
+}
+
 void compact_relabel_mutations(int** mutant_counts, int*** wildtype_state, int*** ra_or_ssd_state, int* wildtype_populations, int* ra_or_ssd_populations) {
     /* Relabels mutation identities of mutant_counts, wildtype_state and ra_or_ssd_state
 	
@@ -938,6 +988,15 @@ int main(int argc, char *argv[]) {
 		free(wildtype_propensity);
 		free(wildtype_propensity_sums);
 
+		// Store wildtype states, populations, and mutant counts to initialise for when RA/SSD population dies out
+		compact_relabel_wildtype_mutations(mutant_counts, wildtype_state, wildtype_populations);
+		int*** initial_wildtype_state = malloc(CELLS * sizeof(int**));
+		copy_state(wildtype_state, initial_wildtype_state, wildtype_populations);
+		int* initial_wildtype_populations = malloc(CELLS * sizeof(int));
+		copy_population(wildtype_populations, initial_wildtype_populations);
+		int** initial_mutant_counts = malloc(CELLS * sizeof(int*));
+		copy_mutant_counts(mutant_counts, initial_mutant_counts);
+
 		/* ra_or_ssd_state contains mutational information about RA/SSD individuals
 		ra_or_ssd_state[k][i][0] is the number of standard mutations which individual i possesses in cell k
 		ra_or_ssd_state[k][i][1:] are the identities of the standard mutations which individual i possesses in cell k */
@@ -948,17 +1007,8 @@ int main(int argc, char *argv[]) {
 		// Simulate systems with RA and SSD separately
 		for (int ssd_sim=0; ssd_sim<=1; ++ssd_sim) {
 
-			// Store states, populations, and mutant counts to initialise for when RA/SSD population dies out
-			int*** initial_wildtype_state = malloc(CELLS * sizeof(int**));
-			copy_state(wildtype_state, initial_wildtype_state, wildtype_populations);
-			int* initial_wildtype_populations = malloc(CELLS * sizeof(int));
-			copy_population(wildtype_populations, initial_wildtype_populations);
-			int** initial_mutant_counts = malloc(CELLS * sizeof(int*));
-			copy_mutant_counts(mutant_counts, initial_mutant_counts);
-
 			// Introduce 1 RA/SSD individual to system
 			introduce_ra_or_ssd(rng, wildtype_state, ra_or_ssd_state, wildtype_populations, ra_or_ssd_populations, cell_with_highest_heteroplasmy);			
-			compact_relabel_mutations(mutant_counts, wildtype_state, ra_or_ssd_state, wildtype_populations, ra_or_ssd_populations);
 			
 			// Initialise propensity
 			/* propensity[k][0] is the propensity of degradation of a wildtype individual in cell k
@@ -995,7 +1045,6 @@ int main(int argc, char *argv[]) {
 				// printf("RA heteroplasmy = %.2f\n", max_ra_or_ssd_heteroplasmy);
 				// Realise event and time of occurence according to propensity
 				gillespie_event(rng, ssd_sim, propensity, propensity_sums, wildtype_state, ra_or_ssd_state, mutant_counts, wildtype_populations, ra_or_ssd_populations, site_std_mutation_rate, degradation_rate, diffusion_rate, nucleus_control_factor, density, target_population, replicative_advantage);
-				
 				max_ra_or_ssd_heteroplasmy = get_max_ra_or_ssd_heteroplasmy(wildtype_populations, ra_or_ssd_populations);
 				n_event2++;
 
@@ -1017,7 +1066,6 @@ int main(int argc, char *argv[]) {
 
 					// Re-introduce RA/SSD individual
 					introduce_ra_or_ssd(rng, wildtype_state, ra_or_ssd_state, wildtype_populations, ra_or_ssd_populations, cell_with_highest_heteroplasmy);			
-					compact_relabel_mutations(mutant_counts, wildtype_state, ra_or_ssd_state, wildtype_populations, ra_or_ssd_populations);
 					max_ra_or_ssd_heteroplasmy = get_max_ra_or_ssd_heteroplasmy(wildtype_populations, ra_or_ssd_populations);
 
 					// Re-setup propensity
@@ -1035,15 +1083,6 @@ int main(int argc, char *argv[]) {
 			}
 			printf("Target RA/SSD heteroplasmy reached\n");
 			compact_relabel_mutations(mutant_counts, wildtype_state, ra_or_ssd_state, wildtype_populations, ra_or_ssd_populations);
-			// Free initial states memory
-			for (int k=0; k<CELLS; ++k) {
-				for (int i=0; i<initial_wildtype_populations[k]; ++i) {free(initial_wildtype_state[k][i]);}
-				free(initial_wildtype_state[k]);
-				free(initial_mutant_counts[k]);
-			}
-			free(initial_mutant_counts);
-			free(initial_wildtype_state);
-			printf("Initial states memory freed\n");
 
 			double propensity_sum_across_cells;
 			double current_time = 0.0;
@@ -1147,6 +1186,17 @@ int main(int argc, char *argv[]) {
 				free(mutant_counts[k]);
 			}
 		}
+		
+		// Free initial states memory
+		for (int k=0; k<CELLS; ++k) {
+			for (int i=0; i<initial_wildtype_populations[k]; ++i) {free(initial_wildtype_state[k][i]);}
+			free(initial_wildtype_state[k]);
+			free(initial_mutant_counts[k]);
+		}
+		free(initial_mutant_counts);
+		free(initial_wildtype_state);
+		printf("Initial states memory freed\n");
+		
 		// Print time usage
 		if ((sim+1) % BATCH_SIZE == 0) {
 			tock = clock();
