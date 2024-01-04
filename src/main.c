@@ -8,17 +8,9 @@
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_statistics.h>
 
+#include "../include/parameters.h"
+
 #define RND gsl_rng_uniform_pos(rng) // generate number from Unif(0,1)
-#define CELLS 2
-#define N_SIMS 1
-#define BATCH_SIZE 1
-#define SIM_LENGTH 100.00
-#define RECORDING_SPACE 10.0
-#define N_BINS 20
-#define YEARS 365.00
-#define WEEKS 7.00
-#define MAX_MUTANTS 100000
-#define LEN_GENOME 16569
 
 void print_state(int** state, int nrow) {
 	/* Print the state of the system for debugging
@@ -95,7 +87,7 @@ void wildtype_propensity_update(double** propensity, double* propensity_sums, in
 	return;
 }
 
-void ra_propensity_update(double** propensity, double* propensity_sums, int cell_idx, int* wildtype_populations, int* ra_populations, double degradation_rate, double diffusion_rate, double nucleus_control_factor, int target_population, double replicative_advantage) {
+void propensity_update(double** propensity, double* propensity_sums, int cell_idx, int* wildtype_populations, int* ra_populations, double degradation_rate, double diffusion_rate, double nucleus_control_factor, int target_population, double replicative_advantage) {
 	/* Updates the propensity of reactions in a cell
     
     Inputs
@@ -326,7 +318,7 @@ int choose_neighbouring_cell(const gsl_rng* rng, int cell_idx) {
 	return neighbour_cell_idx;
 }
 
-void non_ssd_gillespie_event(const gsl_rng* rng, double** propensity, double* propensity_sums, int*** wildtype_state, int* wildtype_populations, int** mutant_counts, long double site_std_mutation_rate, double degradation_rate, double diffusion_rate, double nucleus_control_factor, int target_population) {
+void wildtype_gillespie_event(const gsl_rng* rng, double** propensity, double* propensity_sums, int*** wildtype_state, int* wildtype_populations, int** mutant_counts, long double site_std_mutation_rate, double degradation_rate, double diffusion_rate, double nucleus_control_factor, int target_population) {
 	/* Realises chosen event and updates system 
 	
 	Inputs
@@ -449,8 +441,8 @@ void gillespie_event(const gsl_rng* rng, int ssd_sim, double** propensity, doubl
 		ssd_propensity_update(propensity, propensity_sums, cell_idx, wildtype_populations, ra_or_ssd_populations, degradation_rate, diffusion_rate, nucleus_control_factor, density, target_population);
 		if (cell_idx_diffuse_to>=0) {ssd_propensity_update(propensity, propensity_sums, cell_idx_diffuse_to, wildtype_populations, ra_or_ssd_populations, degradation_rate, diffusion_rate, nucleus_control_factor, density, target_population);}
 	} else {
-		ra_propensity_update(propensity, propensity_sums, cell_idx, wildtype_populations, ra_or_ssd_populations, degradation_rate, diffusion_rate, nucleus_control_factor, target_population, replicative_advantage);
-		if (cell_idx_diffuse_to>=0) {ra_propensity_update(propensity, propensity_sums, cell_idx_diffuse_to, wildtype_populations, ra_or_ssd_populations, degradation_rate, diffusion_rate, nucleus_control_factor, target_population, replicative_advantage);}
+		propensity_update(propensity, propensity_sums, cell_idx, wildtype_populations, ra_or_ssd_populations, degradation_rate, diffusion_rate, nucleus_control_factor, target_population, replicative_advantage);
+		if (cell_idx_diffuse_to>=0) {propensity_update(propensity, propensity_sums, cell_idx_diffuse_to, wildtype_populations, ra_or_ssd_populations, degradation_rate, diffusion_rate, nucleus_control_factor, target_population, replicative_advantage);}
 	}
 	return;
 }
@@ -974,7 +966,7 @@ int main(int argc, char *argv[]) {
 		printf("Trying to reach standard mutation homoplasmy...\n");
 		do {
 			// Realise event according to propensity
-			non_ssd_gillespie_event(rng, wildtype_propensity, wildtype_propensity_sums, wildtype_state, wildtype_populations, mutant_counts, site_std_mutation_rate, degradation_rate, diffusion_rate, nucleus_control_factor, target_population);
+			wildtype_gillespie_event(rng, wildtype_propensity, wildtype_propensity_sums, wildtype_state, wildtype_populations, mutant_counts, site_std_mutation_rate, degradation_rate, diffusion_rate, nucleus_control_factor, target_population);
 
 			get_max_std_heteroplasmies(max_std_heteroplasmies, mutant_counts, wildtype_populations); 
 
@@ -1028,7 +1020,7 @@ int main(int argc, char *argv[]) {
 			} else {
 				for (int k=0; k<CELLS; ++k) {
 					propensity[k] = malloc(6 * sizeof(double));
-					ra_propensity_update(propensity, propensity_sums, k, wildtype_populations, ra_or_ssd_populations, degradation_rate, diffusion_rate, nucleus_control_factor, target_population, replicative_advantage);
+					propensity_update(propensity, propensity_sums, k, wildtype_populations, ra_or_ssd_populations, degradation_rate, diffusion_rate, nucleus_control_factor, target_population, replicative_advantage);
 				}
 			}
 
@@ -1075,7 +1067,7 @@ int main(int argc, char *argv[]) {
 						}
 					} else {
 						for (int k=0; k<CELLS; ++k) {
-							ra_propensity_update(propensity, propensity_sums, k, wildtype_populations, ra_or_ssd_populations, degradation_rate, diffusion_rate, nucleus_control_factor, target_population, replicative_advantage);
+							propensity_update(propensity, propensity_sums, k, wildtype_populations, ra_or_ssd_populations, degradation_rate, diffusion_rate, nucleus_control_factor, target_population, replicative_advantage);
 						}
 					}
 					n_event2 = 0;
@@ -1196,7 +1188,7 @@ int main(int argc, char *argv[]) {
 		free(initial_mutant_counts);
 		free(initial_wildtype_state);
 		printf("Initial states memory freed\n");
-		
+
 		// Print time usage
 		if ((sim+1) % BATCH_SIZE == 0) {
 			tock = clock();
