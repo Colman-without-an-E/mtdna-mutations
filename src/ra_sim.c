@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <math.h>
 #include <time.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/stat.h>
 
 #include <gsl/gsl_randist.h>
 #include <gsl/gsl_rng.h>
@@ -64,19 +67,57 @@ int main(int argc, char *argv[]) {
 	// Generate replication rate and mutation rate for this run
     long double site_std_mutation_rate = pow(10, - log_site_std_mutation_rate);
 
+	// Create directory with name current time, to store simulation results
+	time_t t = time(NULL);
+    struct tm *tm_info = localtime(&t);
+    char dir_name[20];
+    strftime(dir_name, 20, "%Y-%m-%d_%H-%M-%S", tm_info);
+    char dir_loc[256];
+    sprintf(dir_loc, "%s/%s", DIR_LOC, dir_name);
+    puts(dir_loc);
+    if(mkdir(dir_loc)) {
+        perror("Error");
+        return 1;
+    }
+
+    // Change to directory which stores simulation results
+    if (chdir(dir_loc)) {
+        perror("Error");
+        return 1;
+    }
+
+	// Set up file to save parameter values
+	FILE *fp_parameters = fopen("parameters.txt", "w");
+	fprintf(fp_parameters, "parameter,value\n");
+	fprintf(fp_parameters, "cells,%d\n", CELLS);
+	fprintf(fp_parameters, "log_site_std_mutation_rate,%e\n", LOG_SITE_STD_MUTATION_RATE);
+	fprintf(fp_parameters, "degradation_rate,%e\n", DEGRADATION_RATE);
+	fprintf(fp_parameters, "diffusion_rate,%e\n", DIFFUSION_RATE);
+	fprintf(fp_parameters, "nucleus_control_factor,%e\n", NUCLEUS_CONTROL_FACTOR);
+	fprintf(fp_parameters, "target_pop,%d\n", TARGET_POP);
+	fprintf(fp_parameters, "replicative_advantage,%e\n", REPLICATIVE_ADVANTAGE);
+	fprintf(fp_parameters, "target_ra_heteroplasmy,%e\n", TARGET_RA_H);
+	fprintf(fp_parameters, "len_genome,%d\n", LEN_GENOME);
+
+	fprintf(fp_parameters, "seed,%d\n", SEED);
+	fprintf(fp_parameters, "n_sims,%d\n", N_SIMS);
+	fprintf(fp_parameters, "sim_length,%e\n", SIM_LENGTH);
+	fprintf(fp_parameters, "recording_space,%e\n", RECORDING_SPACE);
+	fprintf(fp_parameters, "n_bins,%d\n", N_BINS);
+
+	fprintf(fp_parameters, "max_n_events,%d\n", MAX_N_EVENTS);
+	fprintf(fp_parameters, "max_mutants,%d\n", MAX_MUTANTS);
+	fclose(fp_parameters);
+
 	// Set up files to write population data in
-	char ra_population_filename[100];
-	sprintf(ra_population_filename, RA_POP, seed);
-	FILE *fp_ra_population;
-	fp_ra_population = fopen(ra_population_filename, "w");
+	char ra_population_filename[30] = "ra_sim_populations.txt";
+	FILE *fp_ra_population = fopen(ra_population_filename, "w");
 	fprintf(fp_ra_population, "sim,cell,t,wildtype_population,ra_population\n");
 	fclose(fp_ra_population);
 
 	// Set up files to write site frequency spectrum data in
-	char ra_sfs_filename[100];
-	sprintf(ra_sfs_filename, RA_SFS, seed);
-	FILE *fp_ra_sfs;
-	fp_ra_sfs = fopen(ra_sfs_filename, "w");
+	char ra_sfs_filename[40] = "ra_sim_site_frequency_spectrum.txt";
+	FILE *fp_ra_sfs = fopen(ra_sfs_filename, "w");
 	fprintf(fp_ra_sfs, "sim,cell,t");
 	double bin_lb = 0.0; // bin lower bound
 	double bin_width = 1.0 / N_BINS;
@@ -246,10 +287,13 @@ int main(int argc, char *argv[]) {
 		// Simulate
 		printf("Simulating...\n");
 		while (current_time<SIM_LENGTH && n_event<MAX_N_EVENTS) {
-			if (sim) {
-				printf("n_event = %d t = %.3f\n", n_event, current_time);
-				inspect_true_mutant_counts(wildtype_state, ra_state, wildtype_populations, ra_populations);
-			}
+			// if (sim) {
+			// printf("n_event = %d t = %.3f\n", n_event, current_time);
+			// printf("TRUE:\n");
+			// inspect_true_mutant_counts_wildtype(wildtype_state, wildtype_populations);
+			// printf("OBTAINED:\n");
+			// print_mutant_counts(mutant_counts);
+			// }
 			propensity_sum_across_cells = 0;
 			for (int k=0; k<CELLS; ++k) {propensity_sum_across_cells += propensity_sums[k];}
 			current_time += -log(RND) / propensity_sum_across_cells;
@@ -263,6 +307,7 @@ int main(int argc, char *argv[]) {
 				compact_relabel_mutations(mutant_counts, wildtype_state, ra_state, wildtype_populations, ra_populations);
 				write_data_to_file(wildtype_populations, ra_populations, mutant_counts, sim, recording_time, ra_population_filename, ra_sfs_filename);
 				printf("EXTINCTION!\n");
+				break;
 			}
 
 			// Record data at recording time

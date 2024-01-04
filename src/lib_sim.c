@@ -108,7 +108,7 @@ void state_update_diffuse(int*** state, int cell_idx_from, int cell_idx_to, int 
     state[cell_idx_to][cell_population_to] = malloc((n_mutations_to_copy+1) * sizeof(int));
 
     // Copy content to the newly allocated row
-	state[cell_idx_to][cell_population_to][0] = state[cell_idx_from][diffuse_row][0];
+	state[cell_idx_to][cell_population_to][0] = n_mutations_to_copy;
     for (int j=1; j<=n_mutations_to_copy; ++j) {
 		int mutation_id = state[cell_idx_from][diffuse_row][j];
 		state[cell_idx_to][cell_population_to][j] = mutation_id;

@@ -11,6 +11,8 @@
         "lib_sim.h": "c",
         "gsl_statistics.h": "c",
         "_debug.h": "c",
-        "gsl_randist.h": "c"
+        "gsl_randist.h": "c",
+        "string.h": "c",
+        "stat.h": "c"
     }
 }
