@@ -1,5 +1,5 @@
-#include "../include/parameters.h"
-#include "../include/lib_sim.h"
+#include "../include/parameters_hpc.h"
+#include "../include/lib_sss_sim.h"
 
 #define RND gsl_rng_uniform_pos(rng) // generate number from Unif(0,1)
 
@@ -143,30 +143,7 @@ int choose_neighbouring_cell(const gsl_rng* rng, int cell_idx) {
 	return neighbour_cell_idx;
 }
 
-// int choose_neighbouring_cell(const gsl_rng* rng, int cell_idx) {
-// 	/* Returns index of neighbouring cell with equal probability
-	
-// 	Inputs
-// 	------
-// 	rng, rng
-// 	cell_idx, index of cell whose neighbouring cell index is to be found */
-
-// 	int neighbour_cell_idx = cell_idx;
-// 	switch (cell_idx) {
-// 		case 0: // left boundary case
-// 			neighbour_cell_idx++;
-// 			break;
-// 		case CELLS-1: // right boundary case
-// 			neighbour_cell_idx--;
-// 			break;
-// 		default: // generic case
-// 			if(gsl_rng_uniform_int(rng, 2)) {neighbour_cell_idx++;} else {neighbour_cell_idx--;}
-// 			break;
-// 	}
-// 	return neighbour_cell_idx;
-// }
-
-void wildtype_propensity_update(double** propensity, double* propensity_sums, int cell_idx, int* wildtype_populations, double degradation_rate, double diffusion_rate, double nucleus_control_factor, int target_population) {
+void wildtype_propensity_update(double** propensity, double* propensity_sums, int cell_idx, int* wildtype_populations, double degradation_rate, double diffusion_rate, double nucleus_control_factor, int target_population, double rate_difference) {
 	/* Updates the wildtype propensity of reactions in a cell
     
     Inputs
@@ -178,13 +155,14 @@ void wildtype_propensity_update(double** propensity, double* propensity_sums, in
     degredation_rate, degradation rate
 	diffusion_rate, diffusion rate
     nucleus_control_factor, nucleus control factor
-    target_population, target population */
+    target_population, target population
+	rate_difference, rate difference */
 
 	int cell_wildtype_population = wildtype_populations[cell_idx];
 	double wildtype_replication_rate = degradation_rate + nucleus_control_factor * (target_population - cell_wildtype_population);
 
-	propensity[cell_idx][0] = degradation_rate * cell_wildtype_population;
-	propensity[cell_idx][1] = fmax(0.0, wildtype_replication_rate * cell_wildtype_population);
+	propensity[cell_idx][0] = (degradation_rate + rate_difference) * cell_wildtype_population;
+	propensity[cell_idx][1] = fmax(0.0, (wildtype_replication_rate + rate_difference) * cell_wildtype_population);
 	propensity[cell_idx][2] = diffusion_rate * cell_wildtype_population;
 
 	propensity_sums[cell_idx] = 0.00;
@@ -216,7 +194,7 @@ int weighted_sample(const gsl_rng* rng, int n, double* weights) {
     return n-1;
 }
 
-void wildtype_gillespie_event(const gsl_rng* rng, double** propensity, double* propensity_sums, int*** wildtype_state, int* wildtype_populations, int** mutant_counts, long double site_std_mutation_rate, double degradation_rate, double diffusion_rate, double nucleus_control_factor, int target_population) {
+void wildtype_gillespie_event(const gsl_rng* rng, double** propensity, double* propensity_sums, int*** wildtype_state, int* wildtype_populations, int** mutant_counts, long double site_std_mutation_rate, double degradation_rate, double diffusion_rate, double nucleus_control_factor, int target_population, double rate_difference) {
 	/* Realises chosen event and updates system 
 	
 	Inputs
@@ -263,12 +241,12 @@ void wildtype_gillespie_event(const gsl_rng* rng, double** propensity, double* p
 	}
 
 	// Update propensity vectors and sum at cells where reaction occured, or with individuals diffused to
-	wildtype_propensity_update(propensity, propensity_sums, cell_idx, wildtype_populations, degradation_rate, diffusion_rate, nucleus_control_factor, target_population);
-	if (0<=cell_idx_diffuse_to && cell_idx_diffuse_to<CELLS) {wildtype_propensity_update(propensity, propensity_sums, cell_idx_diffuse_to, wildtype_populations, degradation_rate, diffusion_rate, nucleus_control_factor, target_population);}
+	wildtype_propensity_update(propensity, propensity_sums, cell_idx, wildtype_populations, degradation_rate, diffusion_rate, nucleus_control_factor, target_population, rate_difference);
+	if (0<=cell_idx_diffuse_to && cell_idx_diffuse_to<CELLS) {wildtype_propensity_update(propensity, propensity_sums, cell_idx_diffuse_to, wildtype_populations, degradation_rate, diffusion_rate, nucleus_control_factor, target_population, rate_difference);}
 	return;
 }
 
-void gillespie_event(const gsl_rng* rng, double** propensity, double* propensity_sums, int*** wildtype_state, int*** ra_or_ssd_state, int** mutant_counts, int* wildtype_populations, int* ra_or_ssd_populations, long double site_std_mutation_rate, double degradation_rate, double diffusion_rate, double nucleus_control_factor, int target_population, double replicative_advantage) {
+void gillespie_event(const gsl_rng* rng, double** propensity, double* propensity_sums, int*** wildtype_state, int*** ra_or_ssd_state, int** mutant_counts, int* wildtype_populations, int* ra_or_ssd_populations, long double site_std_mutation_rate, double degradation_rate, double diffusion_rate, double nucleus_control_factor, int target_population, double rate_difference) {
 	/* Realise chosen event and updates system with RAs
 	
 	Inputs
@@ -286,7 +264,7 @@ void gillespie_event(const gsl_rng* rng, double** propensity, double* propensity
 	diffusion_rate, diffusion rate
 	nucleus_control_factor, nucleus control factor
 	target_population, target population
-	replicative_advantage, replicative advantage */
+	rate_difference, rate difference */
 
 	// Choose which cell event takes place in
 	int cell_idx = weighted_sample(rng, CELLS, propensity_sums);
@@ -333,8 +311,8 @@ void gillespie_event(const gsl_rng* rng, double** propensity, double* propensity
 	}
 
 	// Update propensity vectors and sum at cells where reaction occured, and with individuals diffused to
-	propensity_update(propensity, propensity_sums, cell_idx, wildtype_populations, ra_or_ssd_populations, degradation_rate, diffusion_rate, nucleus_control_factor, target_population, replicative_advantage);
-	if (0<=cell_idx_diffuse_to && cell_idx_diffuse_to<CELLS) {propensity_update(propensity, propensity_sums, cell_idx_diffuse_to, wildtype_populations, ra_or_ssd_populations, degradation_rate, diffusion_rate, nucleus_control_factor, target_population, replicative_advantage);}
+	propensity_update(propensity, propensity_sums, cell_idx, wildtype_populations, ra_or_ssd_populations, degradation_rate, diffusion_rate, nucleus_control_factor, target_population, rate_difference);
+	if (0<=cell_idx_diffuse_to && cell_idx_diffuse_to<CELLS) {propensity_update(propensity, propensity_sums, cell_idx_diffuse_to, wildtype_populations, ra_or_ssd_populations, degradation_rate, diffusion_rate, nucleus_control_factor, target_population, rate_difference);}
 	return;
 }
 
@@ -606,45 +584,25 @@ void write_data_to_file_pre_introduce(int* wildtype_populations, int** mutant_co
 	fp_population, location of writing file for population data
 	fp_sfs, location of writing file for site frequency spectrum data */
 
-    int cell_total_population;
-	int cell_mutant_count_i; // mutant count of mutations of id i in a cell
-	int mutant_sum;
-	int n_existing_mutation;
-	int existing_mutation;
-
-	// Compute site frequency spectrum of each cell
-	int bin_idx;
+	// Write population data to file
+	FILE* fp_population = fopen(population_filename, "a");
     for (int k=0; k<CELLS; ++k) {
-		mutant_sum = 0;
-		n_existing_mutation = 0;
-		existing_mutation = 0;
-		int site_frequency_spectrum[N_BINS] = {0};
-		for (int i=1; i<=mutant_counts[0][0]; ++i) {
-			cell_mutant_count_i = mutant_counts[k][i];
-			if (cell_mutant_count_i) { // only count existing mutations
-				mutant_sum += cell_mutant_count_i;
-
-				// Count mutations of RA/SSD individuals with heteroplasmy level in appropriate bin
-				bin_idx = (int) ((double) N_BINS * cell_mutant_count_i / wildtype_populations[k]);
-				if (bin_idx==N_BINS) {bin_idx--;}
-				site_frequency_spectrum[bin_idx]++;
-
-				n_existing_mutation++;
-			}
-		}
-
-		// Write population data to file
-		FILE* fp_population = fopen(population_filename, "a");
 		fprintf(fp_population, "%d,%d,%.0lf,%d,%d\n", sim, k, recording_time, wildtype_populations[k], 0);
-        fclose(fp_population);
-
-		// Write site frequency (density) data to file
-		FILE* fp_sfs = fopen(sfs_filename, "a");
-		fprintf(fp_sfs, "%d,%d,%.0lf", sim, k, recording_time);
-		for (bin_idx=0; bin_idx<N_BINS; ++bin_idx) {fprintf(fp_sfs, ",%d", site_frequency_spectrum[bin_idx]);}
-		fprintf(fp_sfs, "\n");
-		fclose(fp_sfs);
 	}
+	fclose(fp_population);
+
+	// Write site frequency data to file
+	FILE* fp_sfs = fopen(sfs_filename, "a");
+	fprintf(fp_sfs, "%d,%.0lf", sim, recording_time);
+	for (int mut_id=1; mut_id<=mutant_counts[0][0]; ++mut_id) {
+		int mutant_count_across_cells = 0;
+		for (int k=0; k<CELLS; ++k) {
+			mutant_count_across_cells += mutant_counts[k][mut_id];
+		}
+		fprintf(fp_sfs, ",%d", mutant_count_across_cells);
+	}
+	fprintf(fp_sfs, "\n");
+	fclose(fp_sfs);
 	return;
 }
 
@@ -661,45 +619,134 @@ void write_data_to_file(int* wildtype_populations, int* ra_or_ssd_populations, i
 	fp_population, location of writing file for population data
 	fp_sfs, location of writing file for site frequency spectrum data */
 
-    int cell_total_population;
-	int cell_mutant_count_i; // mutant count of mutations of id i in a cell
-	int mutant_sum;
-	int n_existing_mutation;
-	int existing_mutation;
-
-	// Compute site frequency spectrum of each cell
-	int bin_idx;
+	// Write population data to file
+	FILE* fp_population = fopen(population_filename, "a");
     for (int k=0; k<CELLS; ++k) {
-        cell_total_population = wildtype_populations[k] + ra_or_ssd_populations[k];
-		mutant_sum = 0;
-		n_existing_mutation = 0;
-		existing_mutation = 0;
-		int site_frequency_spectrum[N_BINS] = {0};
-		for (int i=1; i<=mutant_counts[0][0]; ++i) {
-			cell_mutant_count_i = mutant_counts[k][i];
-			if (cell_mutant_count_i) { // only count existing mutations
-				mutant_sum += cell_mutant_count_i;
-
-				// Count mutations of RA/SSD individuals with heteroplasmy level in appropriate bin
-				bin_idx = (int) ((double) N_BINS * cell_mutant_count_i / cell_total_population);
-				if (bin_idx==N_BINS) {bin_idx--;}
-				site_frequency_spectrum[bin_idx]++;
-
-				n_existing_mutation++;
-			}
-		}
-
-		// Write population data to file
-		FILE* fp_population = fopen(population_filename, "a");
 		fprintf(fp_population, "%d,%d,%.0lf,%d,%d\n", sim, k, recording_time, wildtype_populations[k], ra_or_ssd_populations[k]);
-        fclose(fp_population);
-
-		// Write site frequency (density) data to file
-		FILE* fp_sfs = fopen(sfs_filename, "a");
-		fprintf(fp_sfs, "%d,%d,%.0lf", sim, k, recording_time);
-		for (bin_idx=0; bin_idx<N_BINS; ++bin_idx) {fprintf(fp_sfs, ",%d", site_frequency_spectrum[bin_idx]);}
-		fprintf(fp_sfs, "\n");
-		fclose(fp_sfs);
 	}
+	fclose(fp_population);
+
+	// Write site frequency data to file
+	FILE* fp_sfs = fopen(sfs_filename, "a");
+	fprintf(fp_sfs, "%d,%.0lf", sim, recording_time);
+	for (int mut_id=1; mut_id<mutant_counts[0][0]; ++mut_id) {
+		int mutant_count_across_cells = 0;
+		for (int k=0; k<CELLS; ++k) {
+			mutant_count_across_cells += mutant_counts[k][mut_id];
+		}
+		fprintf(fp_sfs, ",%d", mutant_count_across_cells);
+	}
+	fprintf(fp_sfs, "\n");
+	fclose(fp_sfs);
 	return;
 }
+
+// void write_data_to_file_pre_introduce(int* wildtype_populations, int** mutant_counts, int sim, double recording_time, char* population_filename, char* sfs_filename) {
+// 	/* Write data pre-introduction of RA/SSD to text file
+
+// 	Inputs
+// 	-------
+//     wildtype_populations, 1d array of population size of wildtype individuals of each cell
+// 	mutant_counts, 2d array of mutant counts of each cell
+// 	sim, index of current simulation
+// 	recording_time, recording timestamp
+// 	fp_population, location of writing file for population data
+// 	fp_sfs, location of writing file for site frequency spectrum data */
+
+//     int cell_total_population;
+// 	int cell_mutant_count_i; // mutant count of mutations of id i in a cell
+// 	int mutant_sum;
+// 	int n_existing_mutation;
+// 	int existing_mutation;
+
+// 	// Compute site frequency spectrum of each cell
+// 	int bin_idx;
+//     for (int k=0; k<CELLS; ++k) {
+// 		mutant_sum = 0;
+// 		n_existing_mutation = 0;
+// 		existing_mutation = 0;
+// 		int site_frequency_spectrum[N_BINS] = {0};
+// 		for (int i=1; i<=mutant_counts[0][0]; ++i) {
+// 			cell_mutant_count_i = mutant_counts[k][i];
+// 			if (cell_mutant_count_i) { // only count existing mutations
+// 				mutant_sum += cell_mutant_count_i;
+
+// 				// Count mutations of RA/SSD individuals with heteroplasmy level in appropriate bin
+// 				bin_idx = (int) ((double) N_BINS * cell_mutant_count_i / wildtype_populations[k]);
+// 				if (bin_idx==N_BINS) {bin_idx--;}
+// 				site_frequency_spectrum[bin_idx]++;
+
+// 				n_existing_mutation++;
+// 			}
+// 		}
+
+// 		// Write population data to file
+// 		FILE* fp_population = fopen(population_filename, "a");
+// 		fprintf(fp_population, "%d,%d,%.0lf,%d,%d\n", sim, k, recording_time, wildtype_populations[k], 0);
+//         fclose(fp_population);
+
+// 		// Write site frequency (density) data to file
+// 		FILE* fp_sfs = fopen(sfs_filename, "a");
+// 		fprintf(fp_sfs, "%d,%d,%.0lf", sim, k, recording_time);
+// 		for (bin_idx=0; bin_idx<N_BINS; ++bin_idx) {fprintf(fp_sfs, ",%d", site_frequency_spectrum[bin_idx]);}
+// 		fprintf(fp_sfs, "\n");
+// 		fclose(fp_sfs);
+// 	}
+// 	return;
+// }
+
+// void write_data_to_file(int* wildtype_populations, int* ra_or_ssd_populations, int** mutant_counts, int sim, double recording_time, char* population_filename, char* sfs_filename) {
+// 	/* Write data to text file
+
+// 	Inputs
+// 	-------
+//     wildtype_populations, 1d array of population size of wildtype individuals of each cell
+//     ra_or_ssd_populations, 1d array of population size of RA/SSD individuals of each cell
+// 	mutant_counts, 2d array of mutant counts of each cell
+// 	sim, index of current simulation
+// 	recording_time, recording timestamp
+// 	fp_population, location of writing file for population data
+// 	fp_sfs, location of writing file for site frequency spectrum data */
+
+//     int cell_total_population;
+// 	int cell_mutant_count_i; // mutant count of mutations of id i in a cell
+// 	int mutant_sum;
+// 	int n_existing_mutation;
+// 	int existing_mutation;
+
+// 	// Compute site frequency spectrum of each cell
+// 	int bin_idx;
+//     for (int k=0; k<CELLS; ++k) {
+//         cell_total_population = wildtype_populations[k] + ra_or_ssd_populations[k];
+// 		mutant_sum = 0;
+// 		n_existing_mutation = 0;
+// 		existing_mutation = 0;
+// 		int site_frequency_spectrum[N_BINS] = {0};
+// 		for (int i=1; i<=mutant_counts[0][0]; ++i) {
+// 			cell_mutant_count_i = mutant_counts[k][i];
+// 			if (cell_mutant_count_i) { // only count existing mutations
+// 				mutant_sum += cell_mutant_count_i;
+
+// 				// Count mutations of RA/SSD individuals with heteroplasmy level in appropriate bin
+// 				bin_idx = (int) ((double) N_BINS * cell_mutant_count_i / cell_total_population);
+// 				if (bin_idx==N_BINS) {bin_idx--;}
+// 				site_frequency_spectrum[bin_idx]++;
+
+// 				n_existing_mutation++;
+// 			}
+// 		}
+
+// 		// Write population data to file
+// 		FILE* fp_population = fopen(population_filename, "a");
+// 		fprintf(fp_population, "%d,%d,%.0lf,%d,%d\n", sim, k, recording_time, wildtype_populations[k], ra_or_ssd_populations[k]);
+//         fclose(fp_population);
+
+// 		// Write site frequency (density) data to file
+// 		FILE* fp_sfs = fopen(sfs_filename, "a");
+// 		fprintf(fp_sfs, "%d,%d,%.0lf", sim, k, recording_time);
+// 		for (bin_idx=0; bin_idx<N_BINS; ++bin_idx) {fprintf(fp_sfs, ",%d", site_frequency_spectrum[bin_idx]);}
+// 		fprintf(fp_sfs, "\n");
+// 		fclose(fp_sfs);
+// 	}
+// 	return;
+// }

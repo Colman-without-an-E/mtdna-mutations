@@ -15,8 +15,8 @@
 
 #define RND gsl_rng_uniform_pos(rng) // generate number from Unif(0,1)
 
-// Define propensity updating rule for RA simulation
-void propensity_update(double** propensity, double* propensity_sums, int cell_idx, int* wildtype_populations, int* ra_populations, double degradation_rate, double diffusion_rate, double nucleus_control_factor, int target_population, double replicative_advantage) {
+// Define propensity updating rule for SSD simulation
+void propensity_update(double** propensity, double* propensity_sums, int cell_idx, int* wildtype_populations, int* ssd_populations, double degradation_rate, double diffusion_rate, double nucleus_control_factor, int target_population, double density) {
 	/* Updates the propensity of reactions in a cell
     
     Inputs
@@ -25,24 +25,23 @@ void propensity_update(double** propensity, double* propensity_sums, int cell_id
 	propensity_sums, 1d array of propensity sums for each cell
 	cell_idx, index of cell to update propensity array of
 	wildtype_populations, 1d array of wildtype population size of each cell
-	ra_populations, 1d array of RA population size of each cell
+	ssd_populations, 1d array of RA population size of each cell
     degradation_rate, degradation rate
 	diffusion_rate, diffusion rate
     density, density
     target_population, target population
-	replicative_advantage, replicative advantage */
+	density, density */
 
 	int cell_wildtype_population = wildtype_populations[cell_idx];
-	int cell_ra_population = ra_populations[cell_idx];
-	double wildtype_replication_rate = degradation_rate + nucleus_control_factor * (target_population - cell_wildtype_population - cell_ra_population);
-	double ra_replication_rate = wildtype_replication_rate + replicative_advantage;
+	int cell_ssd_population = ssd_populations[cell_idx];
+	double replication_rate = fmax(0.0, degradation_rate + nucleus_control_factor * (target_population - cell_wildtype_population - density*cell_ssd_population));
 	
 	propensity[cell_idx][0] = degradation_rate * cell_wildtype_population;
-	propensity[cell_idx][1] = fmax(0.0, wildtype_replication_rate * cell_wildtype_population);
+	propensity[cell_idx][1] = replication_rate * cell_wildtype_population;
 	propensity[cell_idx][2] = diffusion_rate * cell_wildtype_population;
-	propensity[cell_idx][3] = degradation_rate * cell_ra_population;
-	propensity[cell_idx][4] = fmax(0.0, ra_replication_rate * cell_ra_population);
-	propensity[cell_idx][5] = diffusion_rate * cell_ra_population;
+	propensity[cell_idx][3] = degradation_rate * cell_ssd_population;
+	propensity[cell_idx][4] = replication_rate * cell_ssd_population;
+	propensity[cell_idx][5] = diffusion_rate * cell_ssd_population;
 
 	propensity_sums[cell_idx] = 0.00;
 	for (int i=0; i<6; ++i) {propensity_sums[cell_idx] += propensity[cell_idx][i];}
@@ -60,7 +59,7 @@ int main(int argc, char *argv[]) {
 	double diffusion_rate = DIFFUSION_RATE;
     double nucleus_control_factor = NUCLEUS_CONTROL_FACTOR;
     int target_population = TARGET_POP;
-	double replicative_advantage = REPLICATIVE_ADVANTAGE;
+	double density = DENSITY;
 
 	// Generate replication rate and mutation rate for this run
     long double site_std_mutation_rate = pow(10, - log_site_std_mutation_rate);
@@ -93,7 +92,7 @@ int main(int argc, char *argv[]) {
 	fprintf(fp_parameters, "diffusion_rate,%e\n", DIFFUSION_RATE);
 	fprintf(fp_parameters, "nucleus_control_factor,%e\n", NUCLEUS_CONTROL_FACTOR);
 	fprintf(fp_parameters, "target_pop,%d\n", TARGET_POP);
-	fprintf(fp_parameters, "replicative_advantage,%e\n", REPLICATIVE_ADVANTAGE);
+	fprintf(fp_parameters, "density,%e\n", DENSITY);
 	fprintf(fp_parameters, "len_genome,%d\n", LEN_GENOME);
 
 	fprintf(fp_parameters, "seed,%d\n", SEED);
@@ -107,23 +106,23 @@ int main(int argc, char *argv[]) {
 	fclose(fp_parameters);
 
 	// Set up files to write population data in
-	char ra_population_filename[30] = "ra_sim_populations.txt";
-	FILE *fp_ra_population = fopen(ra_population_filename, "w");
-	fprintf(fp_ra_population, "sim,cell,t,wildtype_population,ra_population\n");
-	fclose(fp_ra_population);
+	char ssd_population_filename[30] = "ssd_sim_populations.txt";
+	FILE *fp_ssd_population = fopen(ssd_population_filename, "w");
+	fprintf(fp_ssd_population, "sim,cell,t,wildtype_population,ssd_population\n");
+	fclose(fp_ssd_population);
 
 	// Set up files to write site frequency spectrum data in
-	char ra_sfs_filename[40] = "ra_sim_site_frequency_spectrum.txt";
-	FILE *fp_ra_sfs = fopen(ra_sfs_filename, "w");
-	fprintf(fp_ra_sfs, "sim,cell,t");
+	char ssd_sfs_filename[40] = "ssd_sim_site_frequency_spectrum.txt";
+	FILE *fp_ssd_sfs = fopen(ssd_sfs_filename, "w");
+	fprintf(fp_ssd_sfs, "sim,cell,t");
 	double bin_lb = 0.0; // bin lower bound
 	double bin_width = 1.0 / N_BINS;
 	for (int bin=0; bin<N_BINS; ++bin) {
-		fprintf(fp_ra_sfs, ",%.2f", bin_lb);
+		fprintf(fp_ssd_sfs, ",%.2f", bin_lb);
 		bin_lb += bin_width;
 	}
-	fprintf(fp_ra_sfs, "\n");
-	fclose(fp_ra_sfs);
+	fprintf(fp_ssd_sfs, "\n");
+	fclose(fp_ssd_sfs);
 
 	// Benchmark each batch of simulations
 	clock_t tick, tock;
@@ -176,8 +175,8 @@ int main(int argc, char *argv[]) {
 
 		// Gillespie algorithm until time threshold reached
 		while (current_time<INTRODUCE_AT && n_event < MAX_N_EVENTS) {
+			// if (n_event%10000==0) {printf("n_event = %d\n", n_event);}
 			// Realise event according to propensity
-			// printf("t = %.3f n_event = %d\n");
 			wildtype_propensity_sum_across_cells = 0;
 			for (int k=0; k<CELLS; ++k) {wildtype_propensity_sum_across_cells += wildtype_propensity_sums[k];}
 			current_time += -log(RND) / wildtype_propensity_sum_across_cells;
@@ -188,7 +187,7 @@ int main(int argc, char *argv[]) {
 			if (current_time>(recording_time - 1E-12)) {
 				// printf("t = %.1f\n", current_time);
 				compact_relabel_wildtype_mutations(mutant_counts, wildtype_state, wildtype_populations);
-				write_data_to_file_pre_introduce(wildtype_populations, mutant_counts, sim, recording_time, ra_population_filename, ra_sfs_filename);
+				write_data_to_file_pre_introduce(wildtype_populations, mutant_counts, sim, recording_time, ssd_population_filename, ssd_sfs_filename);
 
 				recording_time += RECORDING_SPACE;
 			}
@@ -199,16 +198,16 @@ int main(int argc, char *argv[]) {
 		free(wildtype_propensity);
 		free(wildtype_propensity_sums);
 
-		/* ra_state contains mutational information about RA individuals
-		ra_state[k][i][0] is the number of standard mutations which individual i possesses in cell k
-		ra_state[k][i][1:] are the identities of the standard mutations which individual i possesses in cell k */
-		int*** ra_state = malloc(CELLS * sizeof(int**));
-		/* ra_populations[k] is the population size of RA individuals in cell k */
-		int* ra_populations = malloc(CELLS * sizeof(int));
+		/* ssd_state contains mutational information about RA individuals
+		ssd_state[k][i][0] is the number of standard mutations which individual i possesses in cell k
+		ssd_state[k][i][1:] are the identities of the standard mutations which individual i possesses in cell k */
+		int*** ssd_state = malloc(CELLS * sizeof(int**));
+		/* ssd_populations[k] is the population size of RA individuals in cell k */
+		int* ssd_populations = malloc(CELLS * sizeof(int));
 
-		// Introduce 1 RA individual at central cell
+		// Introduce 1 SSD individual at central cell
 		int introduce_cell_idx = CELLS / 2;
-		introduce_ra_or_ssd(rng, wildtype_state, ra_state, wildtype_populations, ra_populations, cell_with_highest_heteroplasmy);			
+		introduce_ra_or_ssd(rng, wildtype_state, ssd_state, wildtype_populations, ssd_populations, cell_with_highest_heteroplasmy);			
 
 		// Initialise propensity
 		/* propensity[k][0] is the propensity of degradation of a wildtype individual in cell k
@@ -222,33 +221,34 @@ int main(int argc, char *argv[]) {
 		double* propensity_sums = malloc(CELLS * sizeof(double));
 		for (int k=0; k<CELLS; ++k) {
 			propensity[k] = malloc(6 * sizeof(double));
-			propensity_update(propensity, propensity_sums, k, wildtype_populations, ra_populations, degradation_rate, diffusion_rate, nucleus_control_factor, target_population, replicative_advantage);
+			propensity_update(propensity, propensity_sums, k, wildtype_populations, ssd_populations, degradation_rate, diffusion_rate, nucleus_control_factor, target_population, density);
 		}
 
 		double propensity_sum_across_cells;
-
+		
 		// Simulate
 		while (current_time<SIM_LENGTH && n_event<MAX_N_EVENTS) {
+			// if (n_event%10000==0) {printf("n_event = %d\n", n_event);}
 			propensity_sum_across_cells = 0;
 			for (int k=0; k<CELLS; ++k) {propensity_sum_across_cells += propensity_sums[k];}
 			current_time += -log(RND) / propensity_sum_across_cells;
-			gillespie_event(rng, propensity, propensity_sums, wildtype_state, ra_state, mutant_counts, wildtype_populations, ra_populations, site_std_mutation_rate, degradation_rate, diffusion_rate, nucleus_control_factor, target_population, replicative_advantage);
+			gillespie_event(rng, propensity, propensity_sums, wildtype_state, ssd_state, mutant_counts, wildtype_populations, ssd_populations, site_std_mutation_rate, degradation_rate, diffusion_rate, nucleus_control_factor, target_population, density);
 			n_event++;
 
-			// In case of extinction of RA individuals, record data before beginning new simulation
-			int total_ra_population = 0;
-			for (int k=0; k<CELLS; ++k) {total_ra_population += ra_populations[k];}
-			if (total_ra_population==0) {
-				compact_relabel_mutations(mutant_counts, wildtype_state, ra_state, wildtype_populations, ra_populations);
-				write_data_to_file(wildtype_populations, ra_populations, mutant_counts, sim, recording_time, ra_population_filename, ra_sfs_filename);
+			// In case of extinction of SSD individuals, record data before beginning new simulation
+			int total_ssd_population = 0;
+			for (int k=0; k<CELLS; ++k) {total_ssd_population += ssd_populations[k];}
+			if (total_ssd_population==0) {
+				compact_relabel_mutations(mutant_counts, wildtype_state, ssd_state, wildtype_populations, ssd_populations);
+				write_data_to_file(wildtype_populations, ssd_populations, mutant_counts, sim, recording_time, ssd_population_filename, ssd_sfs_filename);
 				break;
 			}
 
 			// Record data at recording time
 			if (current_time>(recording_time - 1E-12)){
 				// printf("t = %.1f\n", current_time);
-				compact_relabel_mutations(mutant_counts, wildtype_state, ra_state, wildtype_populations, ra_populations);
-				write_data_to_file(wildtype_populations, ra_populations, mutant_counts, sim, recording_time, ra_population_filename, ra_sfs_filename);
+				compact_relabel_mutations(mutant_counts, wildtype_state, ssd_state, wildtype_populations, ssd_populations);
+				write_data_to_file(wildtype_populations, ssd_populations, mutant_counts, sim, recording_time, ssd_population_filename, ssd_sfs_filename);
 
 				recording_time += RECORDING_SPACE;
 			}
@@ -258,8 +258,8 @@ int main(int argc, char *argv[]) {
 		for (int k=0; k<CELLS; ++k){
 			for (int i=0; i<wildtype_populations[k]; ++i){free(wildtype_state[k][i]);}
 			free(wildtype_state[k]);
-			for (int i=0; i<ra_populations[k]; ++i){free(ra_state[k][i]);}
-			free(ra_state[k]);
+			for (int i=0; i<ssd_populations[k]; ++i){free(ssd_state[k][i]);}
+			free(ssd_state[k]);
 
 			free(mutant_counts[k]);
 
@@ -267,8 +267,8 @@ int main(int argc, char *argv[]) {
 		}
 		free(wildtype_state);
 		free(wildtype_populations);
-		free(ra_state);
-		free(ra_populations);
+		free(ssd_state);
+		free(ssd_populations);
 
 		free(mutant_counts);
 

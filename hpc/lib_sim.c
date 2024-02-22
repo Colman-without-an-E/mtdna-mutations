@@ -1,7 +1,100 @@
-#include "../include/parameters.h"
+#include "../include/parameters_hpc.h"
 #include "../include/lib_sim.h"
 
+#define HASHSIZE 211
 #define RND gsl_rng_uniform_pos(rng) // generate number from Unif(0,1)
+
+/* Counter: Build a dictionary structure and counting function for succinctly recording distributional data */
+
+/* KeyValuePair.key is an integer key
+KeyValuePair.value is an integer value
+KeyValuePair.next is a pointer to the next KeyValuePair whose key has the same hash value */
+struct KeyValuePair {
+    int key;
+    int value;
+    struct KeyValuePair *next;
+};
+
+/* Dict.hash_table[i] is a pointer to a KeyValuePair whose hashed key is i */
+typedef struct {
+    unsigned hash_size;
+    struct KeyValuePair** hash_table;
+} Dict;
+
+unsigned hash(int k, unsigned hash_size) {
+    /* Simple hash function. Modular arithmetic. */
+    return k % hash_size;
+}
+
+struct KeyValuePair* lookup(Dict dict, int key) {
+    /* Performs hash table lookup of a dictionary
+    
+    Inputs
+    ------
+    dict, pointer to dictionary
+    key, lookup key
+    
+    Returns
+    -------
+    pointer to the required key-value pair */
+
+    struct KeyValuePair* item;
+    for (item=dict.hash_table[hash(key, dict.hash_size)]; item!=NULL; item=item->next) {
+        if (key==item->key) {
+            return item; // found
+        }
+    }
+    return NULL; // not found
+}
+
+void print_dictionary(Dict dict) {
+    /* Prints all key-value pairs of a dictionary in the format of key:value.
+    
+    Inputs
+    ------
+    dict, dictionary */
+    for (int i=0; i<dict.hash_size; ++i) {
+        struct KeyValuePair* item;
+        for (item=dict.hash_table[i]; item!=NULL; item=item->next) {
+            printf("%d:%d\n", item->key, item->value);
+        }
+    }
+}
+
+Dict counter(int *array, int length, int hash_size) {
+    /* Returns a dictionary which counts the occurences of unique integers in array
+    
+    Inputs
+    ------
+    array, 1d array of ints
+    length, length of array */
+
+    // Initialize dictionary with hash_table pointers to NULL
+    Dict dict;
+    dict.hash_size = hash_size;
+    dict.hash_table = malloc(dict.hash_size * sizeof(struct KeyValuePair*));
+    for (int h=0; h<dict.hash_size; ++h) {dict.hash_table[h] = NULL;}
+
+    for (int i=0; i<length; ++i) {
+        struct KeyValuePair* item = lookup(dict, array[i]);
+
+        // Install new key-value pair to dictionary if array[i] not found
+        if (item == NULL) {
+            unsigned hash_value = hash(array[i], dict.hash_size);
+            item = malloc(sizeof(*item));
+            item->key = array[i];
+            item->value = 1;
+            item->next = dict.hash_table[hash_value];
+            dict.hash_table[hash_value] = item;
+        } else {
+            item->value++; // increment count by 1 when array[i] is found
+        }
+    }
+    return dict;
+}
+
+/* End of Counter */
+
 
 void state_update_degrade(int*** state, int cell_idx, int degrade_row, int* populations, int** mutant_counts) {
     /* Updates state when degradation of one individual occurs
@@ -142,29 +235,6 @@ int choose_neighbouring_cell(const gsl_rng* rng, int cell_idx) {
 	(gsl_rng_uniform_int(rng, 2)) ? neighbour_cell_idx++ : neighbour_cell_idx--;
 	return neighbour_cell_idx;
 }
-
-// int choose_neighbouring_cell(const gsl_rng* rng, int cell_idx) {
-// 	/* Returns index of neighbouring cell with equal probability
-	
-// 	Inputs
-// 	------
-// 	rng, rng
-// 	cell_idx, index of cell whose neighbouring cell index is to be found */
-
-// 	int neighbour_cell_idx = cell_idx;
-// 	switch (cell_idx) {
-// 		case 0: // left boundary case
-// 			neighbour_cell_idx++;
-// 			break;
-// 		case CELLS-1: // right boundary case
-// 			neighbour_cell_idx--;
-// 			break;
-// 		default: // generic case
-// 			if(gsl_rng_uniform_int(rng, 2)) {neighbour_cell_idx++;} else {neighbour_cell_idx--;}
-// 			break;
-// 	}
-// 	return neighbour_cell_idx;
-// }
 
 void wildtype_propensity_update(double** propensity, double* propensity_sums, int cell_idx, int* wildtype_populations, double degradation_rate, double diffusion_rate, double nucleus_control_factor, int target_population) {
 	/* Updates the wildtype propensity of reactions in a cell
@@ -606,45 +676,38 @@ void write_data_to_file_pre_introduce(int* wildtype_populations, int** mutant_co
 	fp_population, location of writing file for population data
 	fp_sfs, location of writing file for site frequency spectrum data */
 
-    int cell_total_population;
-	int cell_mutant_count_i; // mutant count of mutations of id i in a cell
-	int mutant_sum;
-	int n_existing_mutation;
-	int existing_mutation;
-
-	// Compute site frequency spectrum of each cell
-	int bin_idx;
+	// Write population data to file
+	FILE* fp_population = fopen(population_filename, "a");
     for (int k=0; k<CELLS; ++k) {
-		mutant_sum = 0;
-		n_existing_mutation = 0;
-		existing_mutation = 0;
-		int site_frequency_spectrum[N_BINS] = {0};
-		for (int i=1; i<=mutant_counts[0][0]; ++i) {
-			cell_mutant_count_i = mutant_counts[k][i];
-			if (cell_mutant_count_i) { // only count existing mutations
-				mutant_sum += cell_mutant_count_i;
-
-				// Count mutations of RA/SSD individuals with heteroplasmy level in appropriate bin
-				bin_idx = (int) ((double) N_BINS * cell_mutant_count_i / wildtype_populations[k]);
-				if (bin_idx==N_BINS) {bin_idx--;}
-				site_frequency_spectrum[bin_idx]++;
-
-				n_existing_mutation++;
-			}
-		}
-
-		// Write population data to file
-		FILE* fp_population = fopen(population_filename, "a");
 		fprintf(fp_population, "%d,%d,%.0lf,%d,%d\n", sim, k, recording_time, wildtype_populations[k], 0);
-        fclose(fp_population);
-
-		// Write site frequency (density) data to file
-		FILE* fp_sfs = fopen(sfs_filename, "a");
-		fprintf(fp_sfs, "%d,%d,%.0lf", sim, k, recording_time);
-		for (bin_idx=0; bin_idx<N_BINS; ++bin_idx) {fprintf(fp_sfs, ",%d", site_frequency_spectrum[bin_idx]);}
-		fprintf(fp_sfs, "\n");
-		fclose(fp_sfs);
 	}
+	fclose(fp_population);
+	
+	// Compute total mutant counts across cells
+	int* mutant_counts_across_cells = calloc(mutant_counts[0][0], sizeof(int));
+	for (int mut_id=1; mut_id<=mutant_counts[0][0]; ++mut_id) {
+		for (int k=0; k<CELLS; ++k) {
+			mutant_counts_across_cells[mut_id-1] += mutant_counts[k][mut_id];
+		}
+	}
+
+	// Write site frequency data to file
+	Dict counts = counter(mutant_counts_across_cells, mutant_counts[0][0], HASHSIZE);
+	FILE* fp_sfs = fopen(sfs_filename, "a");
+	fprintf(fp_sfs, "%d,%.0lf,{", sim, recording_time);
+	int comma_flag = 0;
+	for (int h=0; h<counts.hash_size; ++h) {
+		for (struct KeyValuePair* item=counts.hash_table[h]; item!=NULL; item=item->next) {
+			if (comma_flag) {
+				fprintf(fp_sfs, ",\"%d\":%d", item->key, item->value);
+			} else {
+				fprintf(fp_sfs, "\"%d\":%d", item->key, item->value);
+			}
+			comma_flag = 1;
+		}
+	}
+	fprintf(fp_sfs, "}\n");
+	fclose(fp_sfs);
 	return;
 }
 
@@ -661,45 +724,37 @@ void write_data_to_file(int* wildtype_populations, int* ra_or_ssd_populations, i
 	fp_population, location of writing file for population data
 	fp_sfs, location of writing file for site frequency spectrum data */
 
-    int cell_total_population;
-	int cell_mutant_count_i; // mutant count of mutations of id i in a cell
-	int mutant_sum;
-	int n_existing_mutation;
-	int existing_mutation;
-
-	// Compute site frequency spectrum of each cell
-	int bin_idx;
+	// Write population data to file
+	FILE* fp_population = fopen(population_filename, "a");
     for (int k=0; k<CELLS; ++k) {
-        cell_total_population = wildtype_populations[k] + ra_or_ssd_populations[k];
-		mutant_sum = 0;
-		n_existing_mutation = 0;
-		existing_mutation = 0;
-		int site_frequency_spectrum[N_BINS] = {0};
-		for (int i=1; i<=mutant_counts[0][0]; ++i) {
-			cell_mutant_count_i = mutant_counts[k][i];
-			if (cell_mutant_count_i) { // only count existing mutations
-				mutant_sum += cell_mutant_count_i;
-
-				// Count mutations of RA/SSD individuals with heteroplasmy level in appropriate bin
-				bin_idx = (int) ((double) N_BINS * cell_mutant_count_i / cell_total_population);
-				if (bin_idx==N_BINS) {bin_idx--;}
-				site_frequency_spectrum[bin_idx]++;
-
-				n_existing_mutation++;
-			}
-		}
-
-		// Write population data to file
-		FILE* fp_population = fopen(population_filename, "a");
 		fprintf(fp_population, "%d,%d,%.0lf,%d,%d\n", sim, k, recording_time, wildtype_populations[k], ra_or_ssd_populations[k]);
-        fclose(fp_population);
-
-		// Write site frequency (density) data to file
-		FILE* fp_sfs = fopen(sfs_filename, "a");
-		fprintf(fp_sfs, "%d,%d,%.0lf", sim, k, recording_time);
-		for (bin_idx=0; bin_idx<N_BINS; ++bin_idx) {fprintf(fp_sfs, ",%d", site_frequency_spectrum[bin_idx]);}
-		fprintf(fp_sfs, "\n");
-		fclose(fp_sfs);
 	}
+	fclose(fp_population);
+
+	// Compute total mutant counts across cells
+	int* mutant_counts_across_cells = calloc(mutant_counts[0][0], sizeof(int));
+	for (int mut_id=1; mut_id<=mutant_counts[0][0]; ++mut_id) {
+		for (int k=0; k<CELLS; ++k) {
+			mutant_counts_across_cells[mut_id-1] += mutant_counts[k][mut_id];
+		}
+	}
+
+	// Write site frequency data to file
+	Dict counts = counter(mutant_counts_across_cells, mutant_counts[0][0], HASHSIZE);
+	FILE* fp_sfs = fopen(sfs_filename, "a");
+	fprintf(fp_sfs, "%d,%.0lf,{", sim, recording_time);
+	int comma_flag = 0;
+	for (int h=0; h<counts.hash_size; ++h) {
+		for (struct KeyValuePair* item=counts.hash_table[h]; item!=NULL; item=item->next) {
+			if (comma_flag) {
+				fprintf(fp_sfs, ",\"%d\":%d", item->key, item->value);
+			} else {
+				fprintf(fp_sfs, "\"%d\":%d", item->key, item->value);
+			}
+			comma_flag = 1;
+		}
+	}
+	fprintf(fp_sfs, "}\n");
+	fclose(fp_sfs);
 	return;
 }

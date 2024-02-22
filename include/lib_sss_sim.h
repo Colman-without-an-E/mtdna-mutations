@@ -17,15 +17,15 @@ void state_update_diffuse(int*** state, int cell_idx_from, int cell_idx_to, int 
 
 int choose_neighbouring_cell(const gsl_rng* rng, int cell_idx);
 
-void wildtype_propensity_update(double** propensity, double* propensity_sums, int cell_idx, int* wildtype_populations, double degradation_rate, double diffusion_rate, double nucleus_control_factor, int target_population);
+void wildtype_propensity_update(double** propensity, double* propensity_sums, int cell_idx, int* wildtype_populations, double degradation_rate, double diffusion_rate, double nucleus_control_factor, int target_population, double rate_difference);
 
-void propensity_update(double** propensity, double* propensity_sums, int cell_idx, int* wildtype_populations, int* ra_or_ssd_populations, double degradation_rate, double diffusion_rate, double nucleus_control_factor, int target_population, double replicative_advantage);
+void propensity_update(double** propensity, double* propensity_sums, int cell_idx, int* wildtype_populations, int* ra_or_ssd_populations, double degradation_rate, double diffusion_rate, double nucleus_control_factor, int target_population, double rate_difference);
 
 int weighted_sample(const gsl_rng* rng, int n, double* weights);
 
-void wildtype_gillespie_event(const gsl_rng* rng, double** propensity, double* propensity_sums, int*** wildtype_state, int* wildtype_populations, int** mutant_counts, long double site_std_mutation_rate, double degradation_rate, double diffusion_rate, double nucleus_control_factor, int target_population);
+void wildtype_gillespie_event(const gsl_rng* rng, double** propensity, double* propensity_sums, int*** wildtype_state, int* wildtype_populations, int** mutant_counts, long double site_std_mutation_rate, double degradation_rate, double diffusion_rate, double nucleus_control_factor, int target_population, double rate_difference);
 
-void gillespie_event(const gsl_rng* rng, double** propensity, double* propensity_sums, int*** wildtype_state, int*** ra_or_ssd_state, int** mutant_counts, int* wildtype_populations, int* ra_or_ssd_populations, long double site_std_mutation_rate, double degradation_rate, double diffusion_rate, double nucleus_control_factor, int target_population, double replicative_advantage);
+void gillespie_event(const gsl_rng* rng, double** propensity, double* propensity_sums, int*** wildtype_state, int*** ra_or_ssd_state, int** mutant_counts, int* wildtype_populations, int* ra_or_ssd_populations, long double site_std_mutation_rate, double degradation_rate, double diffusion_rate, double nucleus_control_factor, int target_population, double rate_difference);
 
 int argmax(double* array, int length);
 

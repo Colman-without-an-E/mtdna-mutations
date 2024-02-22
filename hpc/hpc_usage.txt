@@ -1,0 +1,19 @@
+PuTTy:
+host name: cyl120@login.hpc.imperial.ac.uk
+
+Local to HPC:
+scp local_filename cyl120@login.hpc.imperial.ac.uk:/rds/general/user/cyl120/home/mtdna-mutations
+scp -r local_foldername cyl120@login.hpc.imperial.ac.uk:/rds/general/user/cyl120/home/mtdna-mutations
+
+HPC to local:
+scp cyl120@login.hpc.imperial.ac.uk:/rds/general/user/cyl120/home/mtdna-mutations/foldername directory
+scp -r cyl120@login.hpc.imperial.ac.uk:/rds/general/user/cyl120/home/mtdna-mutations/foldername directory
+
+How to compile:
+module load tools/prod
+module load GCCcore/12.2.0
+module load GSL/2.7-GCC-12.2.0
+gcc wildtype_single_sim.c lib_sim.c -o wildtype_single_sim.o -lgsl -lgslcblas -lm
+
+Executing file
+./wildtype_single_sim.o [seed]

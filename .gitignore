@@ -28,6 +28,10 @@
 *.so.*
 *.dylib
 
+# Shell
+*.pbs
+*.sh
+
 # Executables
 *.exe
 *.out
@@ -54,3 +58,4 @@ dkms.conf
 
 # Simulation results
 data/
+figures/
