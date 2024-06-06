@@ -3,10 +3,10 @@ __pycache__/
 *.py[cod]
 
 # IDE-specific files
-.Rproj.user
+.Rproj.user/
 .Rhistory
 .Rdata
-.vscode
+.vscode/
 
 # Prerequisites
 *.d
