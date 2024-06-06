@@ -2,6 +2,12 @@
 __pycache__/
 *.py[cod]
 
+# IDE-specific files
+.Rproj.user
+.Rhistory
+.Rdata
+.vscode
+
 # Prerequisites
 *.d
 
@@ -65,3 +71,6 @@ data/
 data_analysis/
 figures/
 *.txt
+
+# temporary storage
+temp_storage/
