@@ -17,3 +17,19 @@ gcc wildtype_single_sim.c lib_sim.c -o wildtype_single_sim.o -lgsl -lgslcblas -l
 
 Executing file
 ./wildtype_single_sim.o [seed]
+
+### Python
+print environment list
+source ~/anaconda3/bin/activate <env_name>
+
+module load anaconda3/personal
+source ~/anaconda3/bin/activate data_analysis
+
+
+### R
+module purge
+module add tools/prod
+module add R/4.2.1-foss-2022a
+
+module load anaconda3/personal
+source ~/anaconda3/bin/activate r413

@@ -96,6 +96,8 @@ Dict counter(int *array, int length, int hash_size) {
 /* End of Counter */
 
 
+/* Functions used in Gillespie algorithm */
+
 void state_update_degrade(int*** state, int cell_idx, int degrade_row, int* populations, int** mutant_counts) {
     /* Updates state when degradation of one individual occurs
     
@@ -195,9 +197,9 @@ void state_update_diffuse(int*** state, int cell_idx_from, int cell_idx_to, int 
 	int cell_population_from = populations[cell_idx_from];
 	int cell_population_to = populations[cell_idx_to];
 
-	// Absorbing boundary case
+	// Closed boundary case
 	if (cell_idx_to==-1 || cell_idx_to==CELLS) {
-		state_update_degrade(state, cell_idx_from, diffuse_row, populations, mutant_counts);
+		// state_update_degrade(state, cell_idx_from, diffuse_row, populations, mutant_counts);
 		return;
 	}
 
@@ -236,7 +238,7 @@ int choose_neighbouring_cell(const gsl_rng* rng, int cell_idx) {
 	return neighbour_cell_idx;
 }
 
-void wildtype_propensity_update(double** propensity, double* propensity_sums, int cell_idx, int* wildtype_populations, double degradation_rate, double diffusion_rate, double nucleus_control_factor, int target_population) {
+void wildtype_propensity_update(double** propensity, double* propensity_sums, int cell_idx, int* wildtype_populations, double degradation_rate, double diffusion_rate, double nucleus_control_factor, double target_population) {
 	/* Updates the wildtype propensity of reactions in a cell
     
     Inputs
@@ -255,7 +257,7 @@ void wildtype_propensity_update(double** propensity, double* propensity_sums, in
 
 	propensity[cell_idx][0] = degradation_rate * cell_wildtype_population;
 	propensity[cell_idx][1] = fmax(0.0, wildtype_replication_rate * cell_wildtype_population);
-	propensity[cell_idx][2] = diffusion_rate * cell_wildtype_population;
+	propensity[cell_idx][2] = 2 * diffusion_rate * cell_wildtype_population;
 
 	propensity_sums[cell_idx] = 0.00;
 	for (int i=0; i<3; ++i){propensity_sums[cell_idx] += propensity[cell_idx][i];}
@@ -286,7 +288,7 @@ int weighted_sample(const gsl_rng* rng, int n, double* weights) {
     return n-1;
 }
 
-void wildtype_gillespie_event(const gsl_rng* rng, double** propensity, double* propensity_sums, int*** wildtype_state, int* wildtype_populations, int** mutant_counts, long double site_std_mutation_rate, double degradation_rate, double diffusion_rate, double nucleus_control_factor, int target_population) {
+void wildtype_gillespie_event(const gsl_rng* rng, double** propensity, double* propensity_sums, int*** wildtype_state, int* wildtype_populations, int** mutant_counts, long double site_std_mutation_rate, double degradation_rate, double diffusion_rate, double nucleus_control_factor, double target_population) {
 	/* Realises chosen event and updates system 
 	
 	Inputs
@@ -338,7 +340,7 @@ void wildtype_gillespie_event(const gsl_rng* rng, double** propensity, double* p
 	return;
 }
 
-void gillespie_event(const gsl_rng* rng, double** propensity, double* propensity_sums, int*** wildtype_state, int*** ra_or_ssd_state, int** mutant_counts, int* wildtype_populations, int* ra_or_ssd_populations, long double site_std_mutation_rate, double degradation_rate, double diffusion_rate, double nucleus_control_factor, int target_population, double replicative_advantage) {
+void gillespie_event(const gsl_rng* rng, double** propensity, double* propensity_sums, int*** wildtype_state, int*** ra_or_ssd_state, int** mutant_counts, int* wildtype_populations, int* ra_or_ssd_populations, long double site_std_mutation_rate, double degradation_rate, double diffusion_rate, double nucleus_control_factor, double target_population, double replicative_advantage) {
 	/* Realise chosen event and updates system with RAs
 	
 	Inputs
@@ -408,21 +410,6 @@ void gillespie_event(const gsl_rng* rng, double** propensity, double* propensity
 	return;
 }
 
-int argmax(double* array, int length) {
-	/* Returns the argument of the maximum of an array
-	
-	Inputs
-	------
-	array, 1d array
-	length, length of array */
-
-	int idx = 0;
-	for (int i=0; i<length; ++i) {
-		if (array[i] > array[idx]) {idx = i;}
-	}
-	return idx;
-}
-
 void get_max_std_heteroplasmies(double* max_std_heteroplasmies, int** mutant_counts, int* wildtype_populations) {
 	/* Get maximum standard heteroplasmy of each cell
 	
@@ -457,6 +444,11 @@ double get_max_ra_or_ssd_heteroplasmy(int* wildtype_populations, int* ra_or_ssd_
 	}
 	return max_value;
 }
+
+/* End of Gillespie algorithm functions */
+
+
+/* Data storage functions */
 
 void introduce_ra_or_ssd(const gsl_rng* rng, int*** wildtype_state, int*** dest_state, int* wildtype_populations, int* dest_populations, int cell_idx) {
     /* Introduces RA to a wildtype individual. Also updates population size
@@ -664,40 +656,44 @@ void copy_population(int* source, int* dest) {
 	return;
 }
 
-void write_data_to_file_pre_introduce(int* wildtype_populations, int** mutant_counts, int sim, double recording_time, char* population_filename, char* sfs_filename) {
+void write_data_to_file_pre_introduce(int* wildtype_populations, int** mutant_counts, double recording_time, char* population_filename, char* sfs_filename) {
 	/* Write data pre-introduction of RA/SSD to text file
 
 	Inputs
 	-------
     wildtype_populations, 1d array of population size of wildtype individuals of each cell
 	mutant_counts, 2d array of mutant counts of each cell
-	sim, index of current simulation
 	recording_time, recording timestamp
 	fp_population, location of writing file for population data
 	fp_sfs, location of writing file for site frequency spectrum data */
 
-	// Write population data to file
+	// Write aggregated population data to file
 	FILE* fp_population = fopen(population_filename, "a");
+	int w_tot = 0;
     for (int k=0; k<CELLS; ++k) {
-		fprintf(fp_population, "%d,%d,%.0lf,%d,%d\n", sim, k, recording_time, wildtype_populations[k], 0);
+		w_tot += wildtype_populations[k];
+	}
+	fprintf(fp_population, "%.0lf,%d,%d,%d\n", recording_time, -1, w_tot, 0);
+
+	// Write cell-wise population data to file
+    for (int k=0; k<CELLS; ++k) {
+		fprintf(fp_population, "%.0lf,%d,%d,%d\n", recording_time, k, wildtype_populations[k], 0);
 	}
 	fclose(fp_population);
-	
-	// Compute total mutant counts across cells
-	int* mutant_counts_across_cells = calloc(mutant_counts[0][0], sizeof(int));
+
+	// Write aggregated site frequency spectrum data across cells to file, encoded as cell index = -1
+	FILE* fp_sfs = fopen(sfs_filename, "a");
+	int* tot_mutant_counts = calloc(mutant_counts[0][0], sizeof(int));
 	for (int mut_id=1; mut_id<=mutant_counts[0][0]; ++mut_id) {
 		for (int k=0; k<CELLS; ++k) {
-			mutant_counts_across_cells[mut_id-1] += mutant_counts[k][mut_id];
+			tot_mutant_counts[mut_id-1] += mutant_counts[k][mut_id];
 		}
 	}
-
-	// Write site frequency data to file
-	Dict counts = counter(mutant_counts_across_cells, mutant_counts[0][0], HASHSIZE);
-	FILE* fp_sfs = fopen(sfs_filename, "a");
-	fprintf(fp_sfs, "%d,%.0lf,{", sim, recording_time);
+	Dict tot_counts = counter(tot_mutant_counts, mutant_counts[0][0], HASHSIZE);
+	fprintf(fp_sfs, "%.0lf,%d,{", recording_time, -1);
 	int comma_flag = 0;
-	for (int h=0; h<counts.hash_size; ++h) {
-		for (struct KeyValuePair* item=counts.hash_table[h]; item!=NULL; item=item->next) {
+	for (int h=0; h<tot_counts.hash_size; ++h) {
+		for (struct KeyValuePair* item=tot_counts.hash_table[h]; item!=NULL; item=item->next) {
 			if (comma_flag) {
 				fprintf(fp_sfs, ",\"%d\":%d", item->key, item->value);
 			} else {
@@ -707,11 +703,35 @@ void write_data_to_file_pre_introduce(int* wildtype_populations, int** mutant_co
 		}
 	}
 	fprintf(fp_sfs, "}\n");
+	free(tot_mutant_counts);
+	
+	// Write cell-wise site frequency spectrum data to file
+	int* cell_mutant_counts = malloc(mutant_counts[0][0]*sizeof(int));
+	for (int k=0; k<CELLS; ++k) {
+		for (int mut_id=1; mut_id<=mutant_counts[0][0]; ++mut_id) {
+			cell_mutant_counts[mut_id-1] = mutant_counts[k][mut_id];
+		}
+		Dict counts = counter(cell_mutant_counts, mutant_counts[0][0], HASHSIZE);
+		fprintf(fp_sfs, "%.0lf,%d,{", recording_time, k);
+		int comma_flag = 0;
+		for (int h=0; h<counts.hash_size; ++h) {
+			for (struct KeyValuePair* item=counts.hash_table[h]; item!=NULL; item=item->next) {
+				if (comma_flag) {
+					fprintf(fp_sfs, ",\"%d\":%d", item->key, item->value);
+				} else {
+					fprintf(fp_sfs, "\"%d\":%d", item->key, item->value);
+				}
+				comma_flag = 1;
+			}
+		}
+		fprintf(fp_sfs, "}\n");
+	}
 	fclose(fp_sfs);
+	free(cell_mutant_counts);
 	return;
 }
 
-void write_data_to_file(int* wildtype_populations, int* ra_or_ssd_populations, int** mutant_counts, int sim, double recording_time, char* population_filename, char* sfs_filename) {
+void write_data_to_file(int* wildtype_populations, int* ra_or_ssd_populations, int** mutant_counts, double recording_time, char* population_filename, char* sfs_filename) {
 	/* Write data to text file
 
 	Inputs
@@ -719,33 +739,39 @@ void write_data_to_file(int* wildtype_populations, int* ra_or_ssd_populations, i
     wildtype_populations, 1d array of population size of wildtype individuals of each cell
     ra_or_ssd_populations, 1d array of population size of RA/SSD individuals of each cell
 	mutant_counts, 2d array of mutant counts of each cell
-	sim, index of current simulation
 	recording_time, recording timestamp
 	fp_population, location of writing file for population data
 	fp_sfs, location of writing file for site frequency spectrum data */
 
-	// Write population data to file
+	// Write aggregated population data to file
 	FILE* fp_population = fopen(population_filename, "a");
+	int w_tot = 0;
+	int m_tot = 0;
     for (int k=0; k<CELLS; ++k) {
-		fprintf(fp_population, "%d,%d,%.0lf,%d,%d\n", sim, k, recording_time, wildtype_populations[k], ra_or_ssd_populations[k]);
+		w_tot += wildtype_populations[k];
+		m_tot += ra_or_ssd_populations[k];
+	}
+	fprintf(fp_population, "%.0lf,%d,%d,%d\n", recording_time, -1, w_tot, m_tot);
+
+	// Write population data to file
+    for (int k=0; k<CELLS; ++k) {
+		fprintf(fp_population, "%.0lf,%d,%d,%d\n", recording_time, k, wildtype_populations[k], ra_or_ssd_populations[k]);
 	}
 	fclose(fp_population);
 
-	// Compute total mutant counts across cells
-	int* mutant_counts_across_cells = calloc(mutant_counts[0][0], sizeof(int));
+	// Write aggregated site frequency spectrum data across cells to file, encoded as cell index = -1
+	FILE* fp_sfs = fopen(sfs_filename, "a");
+	int* tot_mutant_counts = calloc(mutant_counts[0][0], sizeof(int));
 	for (int mut_id=1; mut_id<=mutant_counts[0][0]; ++mut_id) {
 		for (int k=0; k<CELLS; ++k) {
-			mutant_counts_across_cells[mut_id-1] += mutant_counts[k][mut_id];
+			tot_mutant_counts[mut_id-1] += mutant_counts[k][mut_id];
 		}
 	}
-
-	// Write site frequency data to file
-	Dict counts = counter(mutant_counts_across_cells, mutant_counts[0][0], HASHSIZE);
-	FILE* fp_sfs = fopen(sfs_filename, "a");
-	fprintf(fp_sfs, "%d,%.0lf,{", sim, recording_time);
+	Dict tot_counts = counter(tot_mutant_counts, mutant_counts[0][0], HASHSIZE);
+	fprintf(fp_sfs, "%.0lf,%d,{", recording_time, -1);
 	int comma_flag = 0;
-	for (int h=0; h<counts.hash_size; ++h) {
-		for (struct KeyValuePair* item=counts.hash_table[h]; item!=NULL; item=item->next) {
+	for (int h=0; h<tot_counts.hash_size; ++h) {
+		for (struct KeyValuePair* item=tot_counts.hash_table[h]; item!=NULL; item=item->next) {
 			if (comma_flag) {
 				fprintf(fp_sfs, ",\"%d\":%d", item->key, item->value);
 			} else {
@@ -755,6 +781,240 @@ void write_data_to_file(int* wildtype_populations, int* ra_or_ssd_populations, i
 		}
 	}
 	fprintf(fp_sfs, "}\n");
+	free(tot_mutant_counts);
+	
+	// Write cell-wise site frequency spectrum data to file
+	int* cell_mutant_counts = malloc(mutant_counts[0][0]*sizeof(int));
+	for (int k=0; k<CELLS; ++k) {
+		for (int mut_id=1; mut_id<=mutant_counts[0][0]; ++mut_id) {
+			cell_mutant_counts[mut_id-1] = mutant_counts[k][mut_id];
+		}
+		Dict counts = counter(cell_mutant_counts, mutant_counts[0][0], HASHSIZE);
+		fprintf(fp_sfs, "%.0lf,%d,{", recording_time, k);
+		int comma_flag = 0;
+		for (int h=0; h<counts.hash_size; ++h) {
+			for (struct KeyValuePair* item=counts.hash_table[h]; item!=NULL; item=item->next) {
+				if (comma_flag) {
+					fprintf(fp_sfs, ",\"%d\":%d", item->key, item->value);
+				} else {
+					fprintf(fp_sfs, "\"%d\":%d", item->key, item->value);
+				}
+				comma_flag = 1;
+			}
+		}
+		fprintf(fp_sfs, "}\n");
+	}
 	fclose(fp_sfs);
+	free(cell_mutant_counts);
 	return;
 }
+
+/* End of data storage */
+
+
+/* Debug functions */
+
+void print_state(int*** state, int* populations, int cell_idx) {
+	/* Print the state of the system for debugging
+	
+	Inputs
+	------
+	state, 3d array of the state
+	populations, population size of each cell
+    cell_idx, index of cell of which to print the state */
+
+    int nrow_to_print = populations[cell_idx];
+	int n_mutations_to_print;
+	for (int i=0; i<nrow_to_print; ++i) {
+		n_mutations_to_print = state[cell_idx][i][0];
+		for (int j=0; j<=n_mutations_to_print; ++j) {
+			printf("%d ", state[cell_idx][i][j]);
+		}
+		printf("\n");
+	}
+	return;
+}
+
+void print_mutant_counts(int** mutant_counts) {
+	/* Print mutant counts for debugging
+	
+	Inputs
+	------
+	mutant_counts, array of mutant counts */
+
+	int ncols = mutant_counts[0][0] + 1;
+	for (int k=0; k<CELLS; ++k) {
+		for (int j=0; j<ncols; ++j) {printf("%d ", mutant_counts[k][j]);}
+		printf("\n");
+	}
+	return;
+}
+
+void generate_state(const gsl_rng* rng, int*** state, int* populations, int pop_mu, double mut_p, int mut_id_mu) {
+    /* Generates state randomly
+    
+    Inputs
+    ------
+    rng, rng
+    state, empty 3d array to store state
+    populations, empty 1d array to store population size of each cell
+    pop_mu, mean population for generation
+    mut_p, probability of a mutation of each individual for generation
+    mut_id_mu, mean mutation id (mutation counter) for generation */
+    
+    int cell_population;
+    int mutation_counter;
+    int n_mutations;
+    // int mut_id;
+
+    // Generate non-zero overall-maximum mutation id, mutation_counter
+    do {
+        mutation_counter = gsl_ran_poisson(rng, mut_id_mu);
+    } while (mutation_counter==0);
+    int* mut_ids_asc = malloc(mutation_counter * sizeof(int));
+    for (int i=0; i<mutation_counter; ++i) {mut_ids_asc[i]=i+1;}
+
+    for (int k=0; k<CELLS; ++k) {
+
+        // Generate non-zero population size 
+        do {
+            cell_population = gsl_ran_poisson(rng, pop_mu);
+        } while (cell_population==0);
+        populations[k] = cell_population;
+
+        // Allocate memory for individuals
+        state[k] = malloc(cell_population * sizeof(int*));
+
+        for (int mut_id=1; mut_id<=mutation_counter; ++mut_id) {
+            
+            // Generate number of mutations of id mut_id for each individual
+            for (int i=0; i<cell_population; ++i) {
+                n_mutations = gsl_ran_binomial(rng, mut_p, mutation_counter);
+                state[k][i] = malloc((n_mutations+1) * sizeof(int));
+                state[k][i][0] = n_mutations;
+                int* mut_state = malloc(n_mutations * sizeof(int));
+                gsl_ran_choose(rng, mut_state, n_mutations, mut_ids_asc, mutation_counter, sizeof(int));
+                for (int j=0; j<n_mutations; ++j) {state[k][i][j+1] = mut_state[j];}
+                free(mut_state);
+            }
+        }
+    }
+    return;
+}
+
+void get_mutant_counts_wildtype(int** mutant_counts, int*** wildtype_state, int* wildtype_population) {
+    /* Stores mutant counts of wildtype system in the 2D array mutant_counts */
+    
+	int mut_id;
+    int n_mut;
+    int mutation_counter = 0;
+    for (int k=0; k<CELLS; ++k) {
+        for (int i=0; i<wildtype_population[k]; ++i) {
+            n_mut = wildtype_state[k][i][0];
+            for (int j=1; j<=n_mut; ++j) {
+                mut_id = wildtype_state[k][i][j];
+                mutant_counts[k][mut_id]++;
+                mutation_counter = fmax(mutation_counter, mut_id);
+            }
+        }
+    }
+
+    mutant_counts[0][0] = mutation_counter;
+    for (int k=0; k<CELLS; ++k) {
+        mutant_counts[k] = realloc(mutant_counts[k], (mutation_counter+1) * sizeof(int));
+    }
+    return;
+}
+
+void get_mutant_counts(int** mutant_counts, int*** wildtype_state, int*** ra_state, int* wildtype_population, int* ra_population) {
+    /* Stores mutant counts of system in the 2D array mutant_counts */
+	
+	int mut_id;
+    int n_mut;
+    int mutation_counter = 0;
+    for (int k=0; k<CELLS; ++k) {
+        for (int i=0; i<wildtype_population[k]; ++i) {
+            n_mut = wildtype_state[k][i][0];
+            for (int j=1; j<=n_mut; ++j) {
+                mut_id = wildtype_state[k][i][j];
+                mutant_counts[k][mut_id]++;
+                mutation_counter = fmax(mutation_counter, mut_id);
+            }
+        }
+        for (int i=0; i<ra_population[k]; ++i) {
+            n_mut = ra_state[k][i][0];
+            for (int j=1; j<=n_mut; ++j) {
+                mut_id = ra_state[k][i][j];
+                mutant_counts[k][mut_id]++;
+                mutation_counter = fmax(mutation_counter, mut_id);
+            }
+        }
+    }
+
+    mutant_counts[0][0] = mutation_counter;
+    for (int k=0; k<CELLS; ++k) {
+        mutant_counts[k] = realloc(mutant_counts[k], (mutation_counter+1) * sizeof(int));
+    }
+    return;
+}
+
+int identical_mutant_counts(int** mutant_counts1, int** mutant_counts2) {
+	/* Compares mutant counts. Returns 1 if they are identical, 0 otherwise. */
+
+	int mutation_counter = mutant_counts1[0][0];
+	if (mutant_counts2[0][0]!=mutation_counter) {
+		return 0;
+	}
+
+	for (int k=0; k<CELLS; ++k) {
+		for (int j=1; j<=mutation_counter; ++j) {
+			if (mutant_counts1[k][j]!=mutant_counts2[k][j]) {
+				return 0;
+			}
+		}
+	}
+	return 1;
+}
+
+int argmax(double* array, int length) {
+	/* Returns the argument of the maximum of an array
+	
+	Inputs
+	------
+	array, 1d array
+	length, length of array */
+
+	int idx = 0;
+	for (int i=0; i<length; ++i) {
+		if (array[i] > array[idx]) {idx = i;}
+	}
+	return idx;
+}
+
+int argmax_mutant_counts(int* args, int** mutant_counts) {
+	/* Returns the maximum of mutant counts. Also stores the corresponding arguments. 
+	
+	Inputs
+	------
+	args, 1d array of 2 entries to store indices of argmax
+	mutant_counts, 2d array of mutant counts */
+
+	// Initialise max and argmax
+	int max = 0;
+	args[0] = 0;
+	args[1] = 0;
+
+	// Iterate over every element in mutant_counts and update max and argmax
+	for (int k=0; k<CELLS; ++k) {
+		for (int j=1; j<=mutant_counts[0][0]; ++j) {
+			if (mutant_counts[k][j]>max) {
+				max = mutant_counts[k][j];
+				args[0] = k;
+				args[1] = j;
+			}
+		}
+	}
+	return max;
+}
+
+/* End of debug function */

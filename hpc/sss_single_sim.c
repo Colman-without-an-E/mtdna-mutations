@@ -71,10 +71,11 @@ int main(int argc, char *argv[]) {
 	// Generate replication rate and mutation rate for this run
     long double site_std_mutation_rate = pow(10, - log_site_std_mutation_rate);
 
-    // Change to directory which stores simulation results
-    if (chdir(DIR_LOC)) {
-        perror("Error");
-        return 1;
+    // Change to directory which stores simulation results. If directory doesn't exist, create one. 
+    if (chdir(DIR_NAME)) {
+		mkdir(DIR_NAME, 0700); // Linux
+		// mkdir(DIR_NAME); // Windows
+		chdir(DIR_NAME);
     }
 
 	// Set up file to save parameter values
@@ -90,8 +91,8 @@ int main(int argc, char *argv[]) {
 	fprintf(fp_parameters, "len_genome,%d\n", LEN_GENOME);
 
 	fprintf(fp_parameters, "sim_length,%e\n", SIM_LENGTH);
+	fprintf(fp_parameters, "introduce_after,%e\n", INTRODUCE_AFTER);
 	fprintf(fp_parameters, "recording_space,%e\n", RECORDING_SPACE);
-	fprintf(fp_parameters, "n_bins,%d\n", N_BINS);
 
 	fprintf(fp_parameters, "max_n_events,%d\n", MAX_N_EVENTS);
 	fprintf(fp_parameters, "max_mutants,%d\n", MAX_MUTANTS);

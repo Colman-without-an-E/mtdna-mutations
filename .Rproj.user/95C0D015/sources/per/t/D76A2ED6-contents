@@ -1,0 +1,64 @@
+library(GillespieSSA)
+library(pracma)
+library(stats)
+
+# Initial state
+x0 <- c(w1=25, m1=25, w2=25, m2=25)
+
+# Propensity vector
+a <- c(
+  "mu*w1", # w1 degrade
+  "mu+c*(Nss-w1-delta*m1)", # w1 replicate
+  "gamma*w1", # w1 diffuse right
+  "mu*m1", # m1 degrade
+  "mu+c*(Nss-w1-delta*m1)", # m1 replicate
+  "gamma*m1", # m1 diffuse right
+  "mu*w2", # w2 degrade
+  "mu+c*(Nss-w2-delta*m2)", # w2 replicate
+  "gamma*w2", # w2 diffuse right
+  "mu*m2", # m2 degrade
+  "mu+c*(Nss-w2-delta*m2)", # m2 replicate
+  "gamma*m2" # m2 diffuse right
+)
+
+# Stoichiometric matrix
+S <- cbind(
+  c(-1,0,0,0), # w1 degrade
+  c(1,0,0,0), # w1 replicate
+  c(-1,0,1,0), # w1 diffuse right
+  c(0,-1,0,0), # m1 degrade
+  c(0,1,0,0), # m1 replicate
+  c(0,-1,0,1), # m1 diffuse right
+  c(0,0,-1,0), # w2 degrade
+  c(0,0,1,0), # w2 replicate
+  c(1,0,-1,0), # w2 diffuse left
+  c(0,0,0,-1), # m2 degrade
+  c(0,0,0,1), # m2 replicate
+  c(0,1,0,-1) # m2 diffuse left
+)
+
+args <- commandArgs(trailingOnly=TRUE)
+if (length(args)!=1) {
+  stop("Usage : ssd_sim_no_sfs.R <seed>")
+}
+seed <- as.integer(args[1])
+set.seed(seed)
+
+# Set simulation parameters
+gammas <- logspace(-4, 2, 2)
+tf <- 50
+dt <- 0.5
+t_interp <- seq(0,tf,dt)
+
+for (gamma in gammas) {
+  parms <- c(mu=7e-2, c=2.5e-3, Nss=30, delta=0.2, gamma=gamma)
+  
+  out <- ssa(x0, a, S, parms, tf, method = ssa.d(), censusInterval = dt/10)
+  data <- out$data
+  data <- cbind(data, h=(data[,"w1"]+data[,"w2"])/(rowSums(data[,1:5])))
+  suppressWarnings(h <- approx(data[,"t"], data[,"h"], xout = t_interp, method = "constant")$y)
+  
+  df <- data.frame(t = t_interp, h)
+  
+  write.csv(df, sprintf("ssd_h_%.2e_%d.csv", gamma, seed), row.names = FALSE)
+}
