@@ -19,7 +19,7 @@ Usage of each file can be found in the README.md in each directory.
 - List of required software and libraries:
   - GCC (https://gcc.gnu.org/install/)
   - Python (version 3.x)
-  - Python libraries: NumPy, pandas, matplotlib
+  - Python libraries: NumPy, SciPy, pandas, matplotlib
 
 ### Installation
 1. **Clone the repository:**
