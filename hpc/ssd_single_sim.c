@@ -8,7 +8,7 @@
 #include <gsl/gsl_randist.h>
 #include <gsl/gsl_rng.h>
 
-#include "../include/parameters_hpc.h"
+#include "../include/parameters.h"
 #include "../include/lib_sim.h"
 
 #define RND gsl_rng_uniform_pos(rng) // generate number from Unif(0,1)

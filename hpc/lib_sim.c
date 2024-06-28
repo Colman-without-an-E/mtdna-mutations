@@ -1,4 +1,4 @@
-#include "../include/parameters_hpc.h"
+#include "../include/parameters.h"
 #include "../include/lib_sim.h"
 
 #define HASHSIZE 211

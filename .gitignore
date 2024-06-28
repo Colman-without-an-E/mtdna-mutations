@@ -6,6 +6,7 @@ __pycache__/
 .Rproj.user/
 .Rhistory
 .Rdata
+*.Rproj
 .vscode/
 
 # Prerequisites
@@ -66,9 +67,12 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
+# Jobs on the HPC
+hpc/
+
 # Simulation results
 data/
-data_analysis/
+data_analysis_local/
 figures/
 *.txt
 

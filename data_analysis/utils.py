@@ -314,22 +314,122 @@ def compile_simulations_populations(path_list, sims = np.arange(1, 11), extinct_
     
     return compiled_df
 
+def ensemble_non_wildtype_data(df, h_threshold = 1.0):
+    """
+    Returns a tuple of ensemble dataframes. 
+    
+    Parameters
+    ----------
+    df : pandas.core.frame.DataFrame
+        simulation population and site frequency spectrum data
+        df.columns = ["sim", "cell", "t", "wildtype_population", "[sim type]_population", "sfs"]
+    h_threshold : float
+        discard simulations if heteroplasmy threshold not reached, must be between 0 and 1
+        
+    Returns
+    -------
+    pandas.core.frame.DataFrame
+        ensemble site frequency spectrum data with columns
+        {
+        cell, only if h_across_cells is False
+            cell index
+        t
+            timestamp at which data are recorded
+        h_mean
+            ensemble average heteroplasmy
+        h_sem
+            ensemble standard error of the heteroplasmy mean
+        w_mean
+            ensemble average wildtype population
+        w_sem
+            ensemble standard error of the wildtype population mean
+        m_mean
+            ensemble average wildtype population
+        m_sem
+            ensemble standard error of the wildtype population mean
+        tot_pop_mean
+            ensemble average total population
+        tot_pop_sem
+            ensemble standard error of the total population mean
+        n_sims
+            number of undiscarded simulations
+        }
+
+    pandas.core.frame.DataFrame
+        ensemble site frequency spectrum data with columns
+        {
+        cell
+            cell index
+        t_mean
+            ensemble mean of time at which SFS data are recorded
+        t_sem
+            ensemble standard error of the time mean
+        sfs
+            ensemble additive union of site frequency spectrum data across simulations
+        n_sims
+            number of undiscarded simulations
+        }
+    """
+
+    if df.shape[1] == 5: # simulations are only wildtypes
+        raise Exception("Wrong number of columns for compiled_pop_df. Expected 6, got 5.")
+    
+    df_copy = df.copy()
+
+    # Compute heteroplasmy
+    df_copy["tot_pop"] = df_copy["m"] + df_copy["w"]
+    df_copy["h"] = df_copy["m"] / df_copy["tot_pop"]
+
+    # Discard simulations when heteroplasmy threshold is not reached
+    df_copy = df_copy.groupby(["cell", "sim"]).filter(lambda x: (x["h"]>=h_threshold).any())
+
+    # Forward fill unrecorded times
+    df_copy = df_ffill(df_copy)
+
+    # Ensmble heteroplamsy data
+    ensemble_h_df = df_copy.groupby(["cell", "t"]).agg(
+        h_mean = ("h", "mean"), h_sem = ("h", "sem"),
+        w_mean = ("w", "mean"), w_sem = ("w", "sem"),
+        m_mean = ("m", "mean"), m_sem = ("m", "sem"),
+        tot_pop_mean = ("tot_pop", "mean"), tot_pop_sem = ("tot_pop", "sem"),
+        n_sims = ("sim", "count")).reset_index()
+        
+    # Obtain SFS when system first hits heteroplasmy threshold for each cell
+    ensemble_sfs_df = df_copy[df_copy["h"]>=h_threshold]
+    ensemble_sfs_df = ensemble_sfs_df.groupby(["sim", "cell"]).first().reset_index()
+
+    # Normalise SFS and assign weighting
+    ensemble_sfs_df["sfs"] = ensemble_sfs_df.apply(lambda x: normalise(x, total_pop_colname = "tot_pop"), axis = 1)
+    ensemble_sfs_df["weight"] = ensemble_sfs_df["sfs"].map(sfs_weight)
+    
+    # Ensemble SFS data by taking the additive union of sfs and number of undiscarded simulations
+    ensemble_sfs_df = ensemble_sfs_df.groupby(["cell"]).agg(
+        t_mean = ("t", "mean"), t_sem = ("t", "sem"),
+        sfs = ("sfs", additive_union), sfs_weighted = ("weight", additive_union),
+        n_sims = ("sim", "count")).reset_index()
+
+    # Return ensemble dataframes
+    return ensemble_h_df, ensemble_sfs_df
+
+
 # Post data ensembling/compilation functions
 
 def remove_zeros(sfs):
     """
-    Remove counts of zero heteroplasmy in site frequency spectrum
+    Returns a copy of site frequency spectrum with counts of zero heteroplasmy removed
     
     Parameters
     ----------
     sfs : dict
         sfs[h] is the number of mutations with heteroplasmy h. h is a string.
+    
+    Returns
+    sfs_copy : dict
     """
-    try:
-        del sfs["0."]
-    except KeyError:
-        pass
-    return sfs
+
+    sfs_copy = sfs.copy()
+    sfs_copy.pop("0.", None)
+    return sfs_copy
 
 def remove_zeros_sfs_df(df1, *args):
     """
@@ -340,6 +440,7 @@ def remove_zeros_sfs_df(df1, *args):
     df1 : pandas.core.dataframe.DataFrame
     *args : df2, df3, ...
     """
+
     for df in list((df1,) + args):
         df["sfs"] = df["sfs"].map(remove_zeros)
 
@@ -355,10 +456,9 @@ def remove_homoplasmy(sfs):
     Returns
     sfs_copy : dict
     """
-    sfs_copy = sfs.copy()
 
-    if "1." in sfs_copy:
-        del sfs_copy["1."]
+    sfs_copy = sfs.copy()
+    sfs_copy.pop("1.", None)
     return sfs_copy
 
 def remove_homoplasmy_sfs_df(df1, *args):
@@ -370,17 +470,37 @@ def remove_homoplasmy_sfs_df(df1, *args):
     df1 : pandas.core.dataframe.DataFrame
     *args : df2, df3, ...
     """
+
     for df in list((df1,) + args):
         df["sfs"] = df["sfs"].map(remove_homoplasmy)
 
 def remove_nan(sfs):
-    try:
-        del sfs["nan"]
-    except KeyError:
-        pass
-    return sfs
+    """
+    Returns a copy of site frequency spectrum with counts of nans removed
+    
+    Parameters
+    ----------
+    sfs : dict
+        sfs[h] is the number of mutations with heteroplasmy h. h is a string.
+    
+    Returns
+    sfs_copy : dict
+    """
+
+    sfs_copy = sfs.copy()
+    sfs_copy.pop("nan", None)
+    return sfs_copy
 
 def remove_nan_sfs_df(df1, *args):
+    """
+    Removes nans in the site frequency spectrum column of dataframes.
+    
+    Parameters
+    ----------
+    df1 : pandas.core.dataframe.DataFrame
+    *args : df2, df3, ...
+    """
+
     for df in list((df1,) + args):
         df["sfs"].map(remove_nan)
 
@@ -516,7 +636,9 @@ def test_statistic(sfs1, sfs2, statistic = "rb", centre = "median", n_bins = 20)
     centre : str
         centre of Levene's test statistic
         either "median" or "mean", default "median"
-        
+    n_bins : int
+        number of bins for computing the L2 distance between histograms
+
     Returns
     -------
     float or tuple
@@ -704,12 +826,12 @@ if __name__ == "__main__":
     sim = 3
     sfs_path = f"wildtype_sim_site_frequency_spectrum{sim}.txt"
     pop_path = f"wildtype_sim_populations{sim}.txt"
-    sfs_df = _get_sfs_data(sfs_path, sim)
+    ra_sfs_df = _get_sfs_data(sfs_path, sim)
     pop_df = _get_populations_data(pop_path, sim, just_wildtype = True)
 
     # Plot site frequency spectrum at specified t
     plot_at_t = [100, 2000, 4000, 8000, 10000]
-    sfs_at_t = sfs_df[sfs_df["t"].isin(plot_at_t)]["sfs"].to_list()
+    sfs_at_t = ra_sfs_df[ra_sfs_df["t"].isin(plot_at_t)]["sfs"].to_list()
     pop_sum_at_t = pop_df[pop_df["t"].isin(plot_at_t)].groupby(["sim", "t"], as_index = False)["wildtype_population"].sum()["wildtype_population"].to_numpy()
     fig, h_axes = plt.subplots()
     for i, t in enumerate(plot_at_t):

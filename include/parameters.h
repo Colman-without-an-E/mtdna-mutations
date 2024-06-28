@@ -21,11 +21,11 @@
 // #define TARGET_POP 97.0 // set set 13
 // #define TARGET_POP 97.2 // set set 14
 // #define TARGET_POP 97.4 // set set 15
-#define TARGET_POP 23.8 // set set 100
-// #define TARGET_POP 24.0 // set set 101
-// #define TARGET_POP 24.2 // set set 102
-// #define TARGET_POP 24.4 // set set 103
-// #define TARGET_POP 24.6 // set set 104
+#define TARGET_POP 13.50896 // set set 100
+// #define TARGET_POP 15.424136 // set set 101
+// #define TARGET_POP 17.339308 // set set 102
+// #define TARGET_POP 19.25448 // set set 103
+// #define TARGET_POP 21.169654 // set set 104
 // #define REPLICATIVE ADVANTAGE 0.05 // set 1
 // #define REPLICATIVE_ADVANTAGE 0.2 // set 2,3,4,6
 // #define REPLICATIVE_ADVANTAGE 0.005374272690266158// set 5,7
@@ -34,11 +34,11 @@
 // #define REPLICATIVE_ADVANTAGE 7.5e-3 // set 13
 // #define REPLICATIVE_ADVANTAGE 7.0e-3 // set 14
 // #define REPLICATIVE_ADVANTAGE 6.5e-3 // set 15
-#define REPLICATIVE_ADVANTAGE 3.0e-3 // set 100
-// #define REPLICATIVE_ADVANTAGE 2.5e-3 // set 101
-// #define REPLICATIVE_ADVANTAGE 2.0e-3 // set 102
-// #define REPLICATIVE_ADVANTAGE 1.5e-3 // set 103
-// #define REPLICATIVE_ADVANTAGE 1.0e-3 // set 104
+#define REPLICATIVE_ADVANTAGE 2.872760e-2 // set 100
+// #define REPLICATIVE_ADVANTAGE 2.393966e-2 // set 101
+// #define REPLICATIVE_ADVANTAGE 1.915173e-2 // set 102 (wave speed formula)
+// #define REPLICATIVE_ADVANTAGE 1.436380e-2 // set 103
+// #define REPLICATIVE_ADVANTAGE 9.575865e-3 // set 104
 // #define REPLICATIVE_ADVANTAGE 0.0 // set 20,21,22,23
 #define DENSITY 0.2
 // #define DENSITY 1.0 // set 20
