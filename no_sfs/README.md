@@ -1,0 +1,3 @@
+# NO_SFS
+
+This directory contains scripts for simulations that do not implement point mutations. C files with suffix `_euler` implement Euler-Maruyama scheme to obtain a numerical solution of an equivalent SDE derived in the report. The other C files use the same exact stochastic simulation algorithm, the Gillespie algorithm, similar to the C source files in `src`, only without point mutations. Since this is not the focus of this repository, we end the description of this directory here. 
